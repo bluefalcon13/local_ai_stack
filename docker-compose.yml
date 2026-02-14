@@ -1,0 +1,112 @@
+services:
+  # --- THE GATEWAY ---
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: unless-stopped
+    user: "1100:1100"
+    ports:
+      - "8443:8443"
+    environment:
+      - DOMAIN_NAME=${BASE_DOMAIN}
+    volumes:
+      - /var/lib/localaistack-configs/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/localaistack-configs/caddy/cloudflare_certs:/data:ro
+      - /home/ai-svc/caddy_config:/config
+    networks:
+      - ai-frontend
+
+  # --- THE AGENTIC BRAIN ---
+  langgraph:
+    image: langchain/langgraph-api:latest
+    container_name: langgraph-api
+    restart: unless-stopped
+    user: "1100:1100"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-main:11434
+      - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
+    volumes:
+      - /var/lib/localaistack-configs/langgraph/agents:/app/agents
+    networks:
+      - ai-frontend
+      - ai-isolated 
+    depends_on:
+      - langgraph-db
+
+  langgraph-db:
+    image: postgres:16
+    container_name: langgraph-db
+    user: "1100:1100"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /home/ai-svc/langgraph_db:/var/lib/postgresql/data
+    networks:
+      - ai-isolated
+
+  # --- THE INTERFACE ---
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    user: "1100:1100"
+    environment:
+      - 'WEBUI_SECRET_KEY=${WEBUI_SECRET}'
+      - 'OLLAMA_BASE_URLS=http://ollama-main:11434;http://tpu-worker:8080'
+      - 'OPENAI_API_BASE_URL=http://langgraph:8000/v1' 
+      - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
+    volumes:
+      - /home/ai-svc/webui_data:/app/backend/data
+    networks:
+      - ai-frontend
+      - ai-search
+      - ai-isolated
+
+  # --- THE MUSCLE (STRIX HALO POWER) ---
+  ollama-main:
+    image: ollama/ollama:latest
+    container_name: ollama-main
+    user: "1100:1100"
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    volumes:
+      - /home/ai-svc/ollama_main:/root/.ollama
+    networks:
+      - ai-isolated 
+
+  tpu-worker:
+    image: localai/localai:latest-tpu
+    container_name: tpu-worker
+    user: "1100:1100"
+    devices:
+      - /dev/apex_0:/dev/apex_0
+    networks:
+      - ai-isolated
+
+  # --- SEARCH & METRICS ---
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    user: "1100:1100"
+    networks:
+      - ai-search
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    user: "1100:1100"
+    networks:
+      - ai-frontend
+
+networks:
+  ai-frontend:
+    driver: bridge
+  ai-search:
+    driver: bridge
+  ai-isolated:
+    driver: bridge
+    internal: true

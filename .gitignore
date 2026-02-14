@@ -1,0 +1,14 @@
+# 1. Secret Environment Variables
+.env
+
+# 2. SSL/Identity Vault
+# We ignore the contents so your private keys stay off the web
+configs/caddy/cloudflare_certs/*
+
+# 3. Keep the directory structure
+# This ensures the 'certs' folder exists when you clone the repo
+!configs/caddy/cloudflare_certs/.gitkeep
+
+# 4. OS/Editor Junk
+.DS_Store
+Thumbs.db

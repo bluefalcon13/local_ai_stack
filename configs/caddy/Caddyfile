@@ -1,0 +1,56 @@
+# Global options
+{
+    # Optional: debug
+}
+
+{$DOMAIN_NAME}:8443 {
+
+    # 1. Identity & mTLS Enforcement
+    tls /data/{$DOMAIN_NAME}_cert.pem /data/{$DOMAIN_NAME}_key.pem {
+        client_auth {
+            # 'verify_if_given' allows local LAN to bypass, 
+            # while still validating the Cloudflare cert via Tunnel.
+            mode verify_if_given
+            trust_pool file /data/authenticated_origin_pull_ca.pem
+        }
+    }
+
+    # 1b. LAN Security (The "Local" Guard)
+    # Blocks anyone not from your house or the internal Docker network.
+    @not_local_or_cloudflare {
+        not remote_ip 192.168.1.0/24  # Your Home LAN
+        not remote_ip 172.16.0.0/12   # Docker internal range
+    }
+    # If they aren't local and don't have the cert, they get the boot:
+    respond @not_local_or_cloudflare 403 "Access Denied: Connection must be Local or via Cloudflare Tunnel"
+
+    # 2. Security Headers (Hardening)
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
+
+    # 3. Routing (The Interior Gateways)
+    
+    # Phoenix (Tracing/Metrics) - Higher priority path
+    handle /phoenix/* {
+        reverse_proxy phoenix:6006
+    }
+
+    # LangGraph API
+    handle /v1/* {
+        reverse_proxy langgraph:8000
+    }
+
+    # Open WebUI (Main Entrypoint / Catch-all)
+    handle /* {
+        reverse_proxy open-webui:8080
+    }
+
+    # 4. Logging
+    log {
+        output file /config/access.log
+    }
+}
