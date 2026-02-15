@@ -1,18 +1,29 @@
 services:
   # --- THE GATEWAY ---
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
+    networks:
+      - ai-frontend
+
+  # --- The GATEKEEPER ---
   caddy:
     image: caddy:latest
     container_name: caddy
-    restart: unless-stopped
-    user: "1100:1100"
-    ports:
-      - "8443:8443"
     environment:
-      - DOMAIN_NAME=${BASE_DOMAIN}
+      - BASE_DOMAIN=${BASE_DOMAIN}
+      - TLS_CLIENT_CERT_NAME=${TLS_CLIENT_CERT_NAME}
+      - TLS_CLIENT_KEY_NAME=${TLS_CLIENT_KEY_NAME}
+      - CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME=${CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}
     volumes:
-      - /var/lib/localaistack-configs/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /var/lib/localaistack-configs/caddy/cloudflare_certs:/data:ro
-      - /home/ai-svc/caddy_config:/config
+      - ${CONFIG_ROOT}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CONFIG_ROOT}/caddy/cloudflare_certs:/data:ro
+      - /home/${SERVICE_USER}/caddy_config:/config2
     networks:
       - ai-frontend
 
@@ -21,12 +32,12 @@ services:
     image: langchain/langgraph-api:latest
     container_name: langgraph-api
     restart: unless-stopped
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
       - OLLAMA_BASE_URL=http://ollama-main:11434
       - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
     volumes:
-      - /var/lib/localaistack-configs/langgraph/agents:/app/agents
+      - ${CONFIG_ROOT}/langgraph/agents:/app/agents
     networks:
       - ai-frontend
       - ai-isolated 
@@ -36,13 +47,13 @@ services:
   langgraph-db:
     image: postgres:16
     container_name: langgraph-db
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - /home/ai-svc/langgraph_db:/var/lib/postgresql/data
+      - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
     networks:
       - ai-isolated
 
@@ -50,14 +61,14 @@ services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET}'
       - 'OLLAMA_BASE_URLS=http://ollama-main:11434;http://tpu-worker:8080'
       - 'OPENAI_API_BASE_URL=http://langgraph:8000/v1' 
       - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
     volumes:
-      - /home/ai-svc/webui_data:/app/backend/data
+      - /home/${SERVICE_USER}/webui_data:/app/backend/data
     networks:
       - ai-frontend
       - ai-search
@@ -67,21 +78,21 @@ services:
   ollama-main:
     image: ollama/ollama:latest
     container_name: ollama-main
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
       - HSA_OVERRIDE_GFX_VERSION=11.5.1
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
     volumes:
-      - /home/ai-svc/ollama_main:/root/.ollama
+      - /home/${SERVICE_USER}/ollama_main:/root/.ollama
     networks:
       - ai-isolated 
 
   tpu-worker:
     image: localai/localai:latest-tpu
     container_name: tpu-worker
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     devices:
       - /dev/apex_0:/dev/apex_0
     networks:
@@ -91,14 +102,18 @@ services:
   searxng:
     image: docker.io/searxng/searxng:latest
     container_name: searxng
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+    volumes:
+      - ${CONFIG_ROOT}/searxng:/etc/searxng:ro
     networks:
       - ai-search
 
   phoenix:
     image: arizephoenix/phoenix:latest
     container_name: phoenix
-    user: "1100:1100"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     networks:
       - ai-frontend
 
