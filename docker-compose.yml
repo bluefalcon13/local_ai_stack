@@ -1,127 +1,217 @@
 services:
-  # --- THE GATEWAY ---
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    restart: unless-stopped
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    command: tunnel --no-autoupdate run
-    networks:
-      - ai-frontend
+    # --- THE GATEWAY ---
+    cloudflared:
+        image: cloudflare/cloudflared:latest
+        container_name: cloudflared
+        restart: unless-stopped
+        user: "${SERVICE_UID}:${SERVICE_UID}"
+        environment:
+            - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+        command: tunnel --no-autoupdate run
+        networks:
+        - ai-frontend
 
-  # --- The GATEKEEPER ---
-  caddy:
-    image: caddy:latest
-    container_name: caddy
-    environment:
-      - BASE_DOMAIN=${BASE_DOMAIN}
-      - TLS_CLIENT_CERT_NAME=${TLS_CLIENT_CERT_NAME}
-      - TLS_CLIENT_KEY_NAME=${TLS_CLIENT_KEY_NAME}
-      - CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME=${CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}
-    volumes:
-      - ${CONFIG_ROOT}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${CONFIG_ROOT}/caddy/cloudflare_certs:/data:ro
-      - /home/${SERVICE_USER}/caddy_config:/config2
-    networks:
-      - ai-frontend
+    # --- The GATEKEEPER ---
+    caddy:
+        image: caddy:latest
+        container_name: caddy
+        environment:
+            - BASE_DOMAIN=${BASE_DOMAIN}
+            - TLS_CLIENT_CERT_NAME=${TLS_CLIENT_CERT_NAME}
+            - TLS_CLIENT_KEY_NAME=${TLS_CLIENT_KEY_NAME}
+            - CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME=${CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}
+            - CLOUDFLARE_EMAIL=${CLOUDFLARE_EMAIL}
+        volumes:
+            # temporary disable the REAL caddyfile and point to a test caddyfile during testing
+            - ${CONFIG_ROOT}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+            # - ${CONFIG_ROOT}/caddy/Caddyfile.test:/etc/caddy/Caddyfile:ro
+            - ${CONFIG_ROOT}/caddy/cloudflare_certs:/etc/caddy/certs:ro
+            - /home/${SERVICE_USER}/caddy/data:/data
+            - /home/${SERVICE_USER}/caddy/config:/config2
+        networks:
+            - ai-frontend
 
-  # --- THE AGENTIC BRAIN ---
-  langgraph:
-    image: langchain/langgraph-api:latest
-    container_name: langgraph-api
-    restart: unless-stopped
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      - OLLAMA_BASE_URL=http://ollama-main:11434
-      - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
-    volumes:
-      - ${CONFIG_ROOT}/langgraph/agents:/app/agents
-    networks:
-      - ai-frontend
-      - ai-isolated 
-    depends_on:
-      - langgraph-db
+    # # --- THE AGENTIC BRAIN ---
+    # langgraph:
+    #   image: langchain/langgraph-api:latest
+    #   container_name: langgraph-api
+    #   restart: unless-stopped
+    #   user: "${SERVICE_UID}:${SERVICE_UID}"
+    #   environment:
+    #     - OLLAMA_BASE_URL=http://ollama-main:11434
+    #     - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
+    #   volumes:
+    #     - ${CONFIG_ROOT}/langgraph/agents:/app/agents
+    #   networks:
+    #     - ai-frontend
+    #     - ai-isolated 
+    #   depends_on:
+    #     - langgraph-db
 
-  langgraph-db:
-    image: postgres:16
-    container_name: langgraph-db
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
-    networks:
-      - ai-isolated
+    # langgraph-db:
+    #   image: postgres:16
+    #   container_name: langgraph-db
+    #   user: "${SERVICE_UID}:${SERVICE_UID}"
+    #   environment:
+    #     POSTGRES_DB: ${POSTGRES_DB}
+    #     POSTGRES_USER: ${POSTGRES_USER}
+    #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    #   volumes:
+    #     - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
+    #   networks:
+    #     - ai-isolated
 
-  # --- THE INTERFACE ---
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      - 'WEBUI_SECRET_KEY=${WEBUI_SECRET}'
-      - 'OLLAMA_BASE_URLS=http://ollama-main:11434;http://tpu-worker:8080'
-      - 'OPENAI_API_BASE_URL=http://langgraph:8000/v1' 
-      - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
-    volumes:
-      - /home/${SERVICE_USER}/webui_data:/app/backend/data
-    networks:
-      - ai-frontend
-      - ai-search
-      - ai-isolated
+    # --- THE INTERFACE ---
+    open-webui:
+        image: ghcr.io/open-webui/open-webui:main
+        container_name: open-webui
+        user: "${SERVICE_UID}:${SERVICE_UID}"
+        environment:
+            - 'WEBUI_SECRET_KEY=${WEBUI_SECRET}'
+            # ADMIN setup
+            - WEBUI_ADMIN_EMAIL=${WEBUI_ADMIN_EMAIL}
+            - WEBUI_ADMIN_PASSWORD=${WEBUI_ADMIN_PASSWORD}
+            # OAUTH setup
+            - ENABLE_OAUTH_PERSISTENT_CONFIG=true
+            - ENABLE_OAUTH_SIGNUP=true
+            - GOOGLE_CLIENT_ID=${GOOGLE_ID}
+            - GOOGLE_CLIENT_SECRET=${GOOGLE_SECRET}
+            - OAUTH_MERGE_ACCOUNTS_BY_EMAIL="true"
+            - OPENID_PROVIDER_URL=https://accounts.google.com/.well-known/openid-configuration
+            - DEFAULT_USER_ROLE=pending
+            - ENABLE_SIGNUP=false
+            # --- API CONNECTIONS ---
+            - 'OLLAMA_BASE_URLS=http://ollama-main:11434'
+            - 'OPENAI_API_BASE_URLS=http://tpu-worker:8080;http://langgraph:8000/v1'
+            # -----------------------
+            - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
+        volumes:
+            - /home/${SERVICE_USER}/webui_data:/app/backend/data
+        networks:
+            - ai-frontend
+            - ai-search
+            - ai-isolated
 
-  # --- THE MUSCLE (STRIX HALO POWER) ---
-  ollama-main:
-    image: ollama/ollama:latest
-    container_name: ollama-main
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      - HSA_OVERRIDE_GFX_VERSION=11.5.1
-    devices:
-      - /dev/kfd:/dev/kfd
-      - /dev/dri:/dev/dri
-    volumes:
-      - /home/${SERVICE_USER}/ollama_main:/root/.ollama
-    networks:
-      - ai-isolated 
+    # --- THE MUSCLE (STRIX HALO POWER) ---
+    vllm-main:
+        # image: vllm-strix:latest
+        image: vllm/vllm-openai-rocm:v0.14.0
+        container_name: vllm-main
+        cap_add:
+            - SYS_PTRACE
+        security_opt:
+            - seccomp:unconfined
+        shm_size: '16gb'
+        # ipc: host
+        group_add:
+            - ${VIDEO_GID}
+            - ${RENDER_GID}
+        environment:
+            - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_TOKEN}
+            - HF_HUB_OFFLINE=1
+            # - VLLM_LOGGING_LEVEL=DEBUG
+            # - VLLM_USE_V1=0
+            - VLLM_HOST_IP=127.0.0.1
+            - VLLM_DO_NOT_TRACK=1
+            - VLLM_TARGET_DEVICE=rocm
+            # - VLLM_ROCM_USE_AITER=0
+            # - VLLM_MLA_DISABLE=1
+            # - HSA_OVERRIDE_GFX_VERSION=11.5.1
+            # - VLLM_USE_TRITON_FLASH_ATTN=1
+            # - TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
+            # - VLLM_ROCM_CUSTOM_PAGED_ATTN=1
+            # keep, uncomment after verifying working
+            # - PYTORCH_TUNABLEOP_ENABLED=1
+            # - PYTORCH_TUNABLEOP_FILENAME=/vllm_tuning/tunableop_results.csv
+            # - VLLM_ENFORCE_EAGER=1
+        volumes:
+            - ~/.cache/huggingface:/root/.cache/huggingface
+            - ${CONFIG_ROOT}/vllm/vllm_config.yaml:/vllm_config.yaml:ro
+            - ${CONFIG_ROOT}/vllm/vllm_tuning:/vllm_tuning
+        # command: ["--config", "/vllm_config.yaml"]
+        command: >
+            --model Qwen/Qwen3-0.6B
+            --gpu-memory-utilization 0.7
+            --max-model-len 16384
+            --enforce-eager
+            --max-num-seqs 128
+        devices:
+            - /dev/kfd:/dev/kfd
+            - /dev/dri:/dev/dri
+        networks:
+            - ai-isolated 
+  
+    # ollama-main:
+    #     image: ollama/ollama:rocm
+    #     container_name: ollama-main
+    #     user: "${SERVICE_UID}:${SERVICE_UID}"
+    #     group_add:
+    #     - ${VIDEO_GID}
+    #     - ${RENDER_GID}
+    #     shm_size: '2gb'
+    #     cap_add:
+    #     - SYS_PTRACE
+    #     security_opt:
+    #     - seccomp:unconfined
+    #     environment:
+    #     # - HSA_OVERRIDE_GFX_VERSION=11.5.1
+    #     - OLLAMA_FLASH_ATTENTION=true
+    #     - OLLAMA_NUM_GPU=40
+    #     - OLLAMA_CONTEXT_LENGTH=32768
+    #     # - HSA_ENABLE_SDMA=0
+    #     - OLLAMA_MAX_LOADED_MODELS=1
+    #     - OLLAMA_NOPRUNE=true
+    #     - OLLAMA_ORIGINS=*
+    #     - OLLAMA_MODELS=/ollama/models
+    #     - HOME=/ollama
+    #     - OLLAMA_HOST=0.0.0.0
+    #     devices:
+    #     - /dev/kfd:/dev/kfd
+    #     - /dev/dri:/dev/dri
+    #     volumes:
+    #     - /home/${SERVICE_USER}/ollama_main:/ollama
+    #     networks:
+    #     - ai-isolated 
 
-  tpu-worker:
-    image: localai/localai:latest-tpu
-    container_name: tpu-worker
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    devices:
-      - /dev/apex_0:/dev/apex_0
-    networks:
-      - ai-isolated
+    # tpu-worker:
+    #     image: localai/localai:latest-tpu
+    #     container_name: tpu-worker
+    #     user: "${SERVICE_UID}:${SERVICE_UID}"
+    #     devices:
+    #     - /dev/apex_0:/dev/apex_0
+    #     networks:
+    #     - ai-isolated
 
-  # --- SEARCH & METRICS ---
-  searxng:
-    image: docker.io/searxng/searxng:latest
-    container_name: searxng
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      - SEARXNG_SECRET=${SEARXNG_SECRET}
-    volumes:
-      - ${CONFIG_ROOT}/searxng:/etc/searxng:ro
-    networks:
-      - ai-search
+    # --- SEARCH & METRICS ---
+    # searxng:
+    #     image: docker.io/searxng/searxng:latest
+    #     container_name: searxng
+    #     user: "${SERVICE_UID}:${SERVICE_UID}"
+    #     environment:
+    #         - SEARXNG_SECRET=${SEARXNG_SECRET}
+    #     volumes:
+    #         - ${CONFIG_ROOT}/searxng:/etc/searxng:ro
+    #     networks:
+    #         - ai-search
 
-  phoenix:
-    image: arizephoenix/phoenix:latest
-    container_name: phoenix
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    networks:
-      - ai-frontend
+    phoenix:
+        image: arizephoenix/phoenix:latest
+        container_name: phoenix
+        user: "${SERVICE_UID}:${SERVICE_UID}"
+        networks:
+            - ai-frontend
+
+# logging:
+#     driver: "json-file"
+#     options:
+#         max-size: "10m"
+#         max-file: "3"
 
 networks:
-  ai-frontend:
-    driver: bridge
-  ai-search:
-    driver: bridge
-  ai-isolated:
-    driver: bridge
-    internal: true
+    ai-frontend:
+        driver: bridge
+    ai-search:
+        driver: bridge
+    ai-isolated:
+        driver: bridge
+        internal: true
