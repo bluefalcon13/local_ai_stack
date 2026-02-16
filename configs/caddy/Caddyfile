@@ -1,56 +1,53 @@
-# Global options
 {
-    # Optional: debug
+    email {$CLOUDFLARE_EMAIL}
+    https_port 8443
+    # auto_https off  # Optional: keep this if you only want it to touch 8443
 }
 
 {$DOMAIN_NAME}:8443 {
 
-    # 1. Identity & mTLS Enforcement
-    tls /data/{$DOMAIN_NAME}_cert.pem /data/{$DOMAIN_NAME}_key.pem {
+    # 1. Identity & mTLS
+    tls /etc/caddy/certs/{$TLS_CLIENT_CERT_NAME} /etc/caddy/certs/{$TLS_CLIENT_KEY_NAME} {
         client_auth {
-            # 'verify_if_given' allows local LAN to bypass, 
-            # while still validating the Cloudflare cert via Tunnel.
             mode verify_if_given
-            trust_pool file /data/authenticated_origin_pull_ca.pem
+            trust_pool file /etc/caddy/certs/{$CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}
         }
     }
 
-    # 1b. LAN Security (The "Local" Guard)
-    # Blocks anyone not from your house or the internal Docker network.
+    # 2. LAN & Cloudflare Guard (Section 1b)
     @not_local_or_cloudflare {
-        not remote_ip 192.168.1.0/24  # Your Home LAN
-        not remote_ip 172.16.0.0/12   # Docker internal range
+        not remote_ip 192.168.1.0/24
+        not remote_ip 172.16.0.0/12
     }
-    # If they aren't local and don't have the cert, they get the boot:
-    respond @not_local_or_cloudflare 403 "Access Denied: Connection must be Local or via Cloudflare Tunnel"
+    respond @not_local_or_cloudflare 403 "Access Denied"
 
-    # 2. Security Headers (Hardening)
+    # 3. Security Hardening
     header {
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
-        Permissions-Policy "geolocation=(), microphone=(), camera=()"
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     }
 
-    # 3. Routing (The Interior Gateways)
-    
-    # Phoenix (Tracing/Metrics) - Higher priority path
-    handle /phoenix/* {
+    # 4. Service Routing (The "Traffic Controller")
+
+    # Phoenix: Strips /phoenix/ from the path
+    handle_path /phoenix/* {
         reverse_proxy phoenix:6006
     }
 
-    # LangGraph API
-    handle /v1/* {
+    # LangGraph: Strips /v1/ from the path
+    handle_path /v1/* {
         reverse_proxy langgraph:8000
     }
 
-    # Open WebUI (Main Entrypoint / Catch-all)
+    # Open WebUI (The "Brain"): Captures everything else
     handle /* {
-        reverse_proxy open-webui:8080
-    }
-
-    # 4. Logging
-    log {
-        output file /config/access.log
+        # CRITICAL: These headers allow Google OAuth to "see" the HTTPS connection        
+        reverse_proxy open-webui:8080 {
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Host {host}
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
     }
 }

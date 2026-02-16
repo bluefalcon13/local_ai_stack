@@ -1,0 +1,21 @@
+{
+    email {$CLOUDFLARE_EMAIL}
+    https_port 8443
+}
+
+{$BASE_DOMAIN} {
+    tls /etc/caddy/certs/{$TLS_CLIENT_CERT_NAME} /etc/caddy/certs/{$TLS_CLIENT_KEY_NAME}
+    
+    # CRITICAL: Tell Open WebUI it's behind a secure proxy
+    header {
+        X-Forwarded-Proto https
+        X-Forwarded-Host {host}
+    }
+
+    # Pass the traffic to the Brain
+    reverse_proxy open-webui:8080 {
+        # Optional but good for big file uploads (models)
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+}
