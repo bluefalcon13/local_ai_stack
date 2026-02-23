@@ -13,53 +13,67 @@ services:
 
   # --- The GATEKEEPER ---
   caddy:
-    image: caddy:latest
+    build:
+      context: ${CONFIG_ROOT}/caddy/
+      dockerfile: Dockerfile
     container_name: caddy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    user: "$SERVICE_UID:$SERVICE_UID"
+    read_only: true
+    restart: unless-stopped
     environment:
-      - BASE_DOMAIN=${BASE_DOMAIN}
+      - DOMAIN_NAME=${DOMAIN_NAME}
       - TLS_CLIENT_CERT_NAME=${TLS_CLIENT_CERT_NAME}
       - TLS_CLIENT_KEY_NAME=${TLS_CLIENT_KEY_NAME}
       - CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME=${CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}
       - CLOUDFLARE_EMAIL=${CLOUDFLARE_EMAIL}
     volumes:
-      # temporary disable the REAL caddyfile and point to a test caddyfile during testing
       - ${CONFIG_ROOT}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      # - ${CONFIG_ROOT}/caddy/Caddyfile.test:/etc/caddy/Caddyfile:ro
       - ${CONFIG_ROOT}/caddy/cloudflare_certs:/etc/caddy/certs:ro
-      - /home/${SERVICE_USER}/caddy/data:/data
-      - /home/${SERVICE_USER}/caddy/config:/config2
+      - /home/${SERVICE_USER}/caddy/data:/data:rw
+      - /home/${SERVICE_USER}/caddy/config:/config:rw
+      # Caddy also needs a small writeable space for temp files/shm
+      - type: tmpfs
+        target: /tmp
+    ports:
+      - "192.168.50.4:443:443"
     networks:
       - ai-frontend
 
-  # # --- THE AGENTIC BRAIN ---
-  # langgraph:
-  #   image: langchain/langgraph-api:latest
-  #   container_name: langgraph-api
-  #   restart: unless-stopped
-  #   user: "${SERVICE_UID}:${SERVICE_UID}"
-  #   environment:
-  #     - OLLAMA_BASE_URL=http://ollama-main:11434
-  #     - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
-  #   volumes:
-  #     - ${CONFIG_ROOT}/langgraph/agents:/app/agents
-  #   networks:
-  #     - ai-frontend
-  #     - ai-isolated 
-  #   depends_on:
-  #     - langgraph-db
+  # --- THE AGENTIC BRAIN ---
+  langgraph:
+    image: langchain/langgraph-api:latest
+    container_name: langgraph-api
+    restart: unless-stopped
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-main:11434
+      - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
+    volumes:
+      - ${CONFIG_ROOT}/langgraph/agents:/app/agents
+    networks:
+      - ai-frontend
+      - ai-isolated 
+    depends_on:
+      - langgraph-db
 
-  # langgraph-db:
-  #   image: postgres:16
-  #   container_name: langgraph-db
-  #   user: "${SERVICE_UID}:${SERVICE_UID}"
-  #   environment:
-  #     POSTGRES_DB: ${POSTGRES_DB}
-  #     POSTGRES_USER: ${POSTGRES_USER}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #   volumes:
-  #     - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
-  #   networks:
-  #     - ai-isolated
+  langgraph-db:
+    image: postgres:16
+    container_name: langgraph-db
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
+    networks:
+      - ai-isolated
 
   # --- THE INTERFACE ---
   open-webui:
@@ -120,33 +134,33 @@ services:
     networks:
       - ai-isolated 
 
-  # tpu-worker:
-  #   image: localai/localai:latest-tpu
-  #   container_name: tpu-worker
-  #   user: "${SERVICE_UID}:${SERVICE_UID}"
-  #   devices:
-  #     - /dev/apex_0:/dev/apex_0
-  #   networks:
-  #     - ai-isolated
+  tpu-worker:
+    image: localai/localai:latest-tpu
+    container_name: tpu-worker
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    devices:
+      - /dev/apex_0:/dev/apex_0
+    networks:
+      - ai-isolated
 
-  # # --- SEARCH & METRICS ---
-  # searxng:
-  #   image: docker.io/searxng/searxng:latest
-  #   container_name: searxng
-  #   user: "${SERVICE_UID}:${SERVICE_UID}"
-  #   environment:
-  #     - SEARXNG_SECRET=${SEARXNG_SECRET}
-  #   volumes:
-  #     - ${CONFIG_ROOT}/searxng:/etc/searxng:ro
-  #   networks:
-  #     - ai-search
+  # --- SEARCH & METRICS ---
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+    volumes:
+      - ${CONFIG_ROOT}/searxng:/etc/searxng:ro
+    networks:
+      - ai-search
 
-  # phoenix:
-  #   image: arizephoenix/phoenix:latest
-  #   container_name: phoenix
-  #   user: "${SERVICE_UID}:${SERVICE_UID}"
-  #   networks:
-  #     - ai-frontend
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    networks:
+      - ai-frontend
 
 # Add this to capture the "Smoking Gun"
     logging:

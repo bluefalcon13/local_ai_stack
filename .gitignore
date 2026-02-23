@@ -11,4 +11,8 @@ configs/caddy/cloudflare_certs/*
 
 # 4. OS/Editor Junk
 .DS_Store
-Thumbs.db
+Thumbs.dub
+.vscode
+.continue
+
+# 5. ignore llama.cpp folder

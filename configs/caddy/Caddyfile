@@ -1,53 +1,47 @@
 {
+    # Global: Trust the Docker network to see 'Real' external IPs
     email {$CLOUDFLARE_EMAIL}
+    # servers {
+    #     trusted_proxies static 172.18.0.0/16
+    # }
     https_port 8443
-    # auto_https off  # Optional: keep this if you only want it to touch 8443
 }
 
-{$DOMAIN_NAME}:8443 {
-
-    # 1. Identity & mTLS
-    tls /etc/caddy/certs/{$TLS_CLIENT_CERT_NAME} /etc/caddy/certs/{$TLS_CLIENT_KEY_NAME} {
+{$DOMAIN_NAME}:443, {$DOMAIN_NAME}:8443 {
+    tls "/etc/caddy/certs/{$TLS_CLIENT_CERT_NAME}" "/etc/caddy/certs/{$TLS_CLIENT_KEY_NAME}" {
         client_auth {
             mode verify_if_given
-            trust_pool file /etc/caddy/certs/{$CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}
+            trust_pool file "/etc/caddy/certs/{$CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME}"
         }
     }
 
-    # 2. LAN & Cloudflare Guard (Section 1b)
-    @not_local_or_cloudflare {
-        not remote_ip 192.168.1.0/24
-        not remote_ip 172.16.0.0/12
-    }
-    respond @not_local_or_cloudflare 403 "Access Denied"
+    # --- THE NONE SHALL PASS GATE ---
 
-    # 3. Security Hardening
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options DENY
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    # Matcher 1: Traffic is from the outside (not LAN)
+    @external {
+        not remote_ip 192.168.0.0/16 172.16.0.0/12 10.0.0.0/8
     }
 
-    # 4. Service Routing (The "Traffic Controller")
-
-    # Phoenix: Strips /phoenix/ from the path
-    handle_path /phoenix/* {
-        reverse_proxy phoenix:6006
+    # Matcher 2: The visitor DOES NOT have a certificate (missing issuer)
+    @no_cert {
+        vars_regexp {http.request.tls.client.issuer} ^$
     }
 
-    # LangGraph: Strips /v1/ from the path
-    handle_path /v1/* {
-        reverse_proxy langgraph:8000
-    }
-
-    # Open WebUI (The "Brain"): Captures everything else
-    handle /* {
-        # CRITICAL: These headers allow Google OAuth to "see" the HTTPS connection        
-        reverse_proxy open-webui:8080 {
-            header_up X-Forwarded-Proto https
-            header_up X-Forwarded-Host {host}
-            header_up Host {host}
-            header_up X-Real-IP {remote_host}
+    # THE ACTION: If External AND No Cert, Abort immediately.
+    handle @external {
+        handle @no_cert {
+            abort
         }
+    }
+    # # If it's NOT internal (LAN/Docker) AND the client didn't provide a cert, dump 'em.
+    # @denied {
+    #     not remote_ip 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8
+    #     # Check if the TLS handshake actually produced a subject name
+    #     vars_regexp {tls_client_subject} ^$
+    # }
+
+    reverse_proxy open-webui:8080 {
+        header_up Host {host}
+        header_up X-Real_IP {remote_host}
     }
 }
