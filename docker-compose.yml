@@ -94,8 +94,8 @@ services:
       - OPENID_PROVIDER_URL=https://accounts.google.com/.well-known/openid-configuration
       - DEFAULT_USER_ROLE=pending
       - ENABLE_SIGNUP=false
-      - 'OLLAMA_BASE_URLS=http://ollama-main:11434;http://tpu-worker:8080'
-      - 'OPENAI_API_BASE_URL=http://langgraph:8000/v1' 
+      - 'OPENAI_API_BASE_URLS=http://lemonade-main:42421/v1;http://langgraph:8000/v1'
+      - 'OPENAI_API_KEYS=sk-lemonade;sk-langgraph' 
       - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
     volumes:
       - /home/${SERVICE_USER}/webui_data:/app/backend/data
@@ -105,34 +105,63 @@ services:
       - ai-isolated
 
   # --- THE MUSCLE (STRIX HALO POWER) ---
-  ollama-main:
-    image: ollama/ollama:rocm
-    container_name: ollama-main
+  lemonade-main:
+    build:
+      context: ${CONFIG_ROOT}/lemonade/
+      dockerfile: Dockerfile
+      args:
+        - UID=${SERVICE_UID}
+        - GID=${SERVICE_UID}
+        - USERNAME=${SERVICE_USER}
+        - VIDEO_GROUP=${VIDEO_GID}
+        - RENDER_GROUP=${RENDER_GID}
+    image: strix-lemonade:latest
+    container_name: lemonade-main
     user: "${SERVICE_UID}:${SERVICE_UID}"
     group_add:
       - ${VIDEO_GID}
       - ${RENDER_GID}
-    shm_size: '2gb'
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    environment:
-      - HSA_OVERRIDE_GFX_VERSION=11.5.1
-      - OLLAMA_FLASH_ATTENTION=true
-      - OLLAMA_NUM_GPU=41
-      - OLLAMA_CONTEXT_LENGTH=32768
-      - HSA_ENABLE_SDMA=0
-      - OLLAMA_MODELS=/ollama/models
-      - HOME=/ollama
-      - OLLAMA_HOST=0.0.0.0
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
+      - /dev/accel/accel0:/dev/accel/accel0
+    shm_size: '96gb'
+    ipc: host
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    restart: unless-stopped
+    tmpfs:
+      - /tmp:size=128M,mode=1777
     volumes:
-      - /home/${SERVICE_USER}/ollama_main:/ollama
+      - /home/${SERVICE_USER}/lemonade/models:/home/${SERVICE_USER}/models
+      - /home/${SERVICE_USER}/lemonade/state:/home/${SERVICE_USER}/.cache/lemonade
+      - /home/${SERVICE_USER}/lemonade/cache:/home/${SERVICE_USER}/.cache/huggingface
+    environment:
+      - LEMONADE_EXTRA_MODELS_DIR=/home/${SERVICE_USER}/models
+      - ROC_ENABLE_PREFETCH_MSI=1
+      - HSA_ENABLE_SDMA=0
+      - ROCR_VISIBLE_DEVICES=0
+      - GGML_HIP_UMA=1
+      - GGML_HIP_ROCWMMA=ON
+      - LEMONADE_AUTOLOAD_MODEL=user.gemma-3-27b 
+      - HF_TOKEN=${HUGGING_FACE_TOKEN}
+      - LEMONADE_DEBUG=1
+      - 'LEMONADE_LLAMACPP_ARGS=--flash-attn on --ubatch-size 1024 --ctx-size 32768 --ngl 999 --parallel 4'
+    command:
+      - lemonade-server
+      - serve
+      - --no-tray
+      # - user.gemma-3-27b
+      - --host
+      - 0.0.0.0
+      - --port
+      - "42421"
+      - --log-level
+      - debug
     networks:
-      - ai-isolated 
+      - ai-isolated
 
   tpu-worker:
     image: localai/localai:latest-tpu
