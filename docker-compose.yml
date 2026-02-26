@@ -126,7 +126,6 @@ services:
       - /dev/dri:/dev/dri
       - /dev/accel/accel0:/dev/accel/accel0
     shm_size: '96gb'
-    ipc: host
     security_opt:
       - seccomp:unconfined
     cap_add:
@@ -145,23 +144,29 @@ services:
       - ROCR_VISIBLE_DEVICES=0
       - GGML_HIP_UMA=1
       - GGML_HIP_ROCWMMA=ON
-      - LEMONADE_AUTOLOAD_MODEL=user.gemma-3-27b 
+      - LEMONADE_AUTOLOAD_MODEL=user.gemma-3-27b-it-qat-q4_0-gguf 
       - HF_TOKEN=${HUGGING_FACE_TOKEN}
       - LEMONADE_DEBUG=1
-      - 'LEMONADE_LLAMACPP_ARGS=--flash-attn on --ubatch-size 1024 --ctx-size 32768 --ngl 999 --parallel 4'
+      - 'LEMONADE_LLAMACPP_ARGS=--flash-attn on --parallel 4 --ubatch-size 1024 --no-mmap'
     command:
       - lemonade-server
-      - serve
+      - run
+      - user.gemma-3-27b-it-qat-q4_0-gguf
       - --no-tray
-      # - user.gemma-3-27b
-      - --host
-      - 0.0.0.0
+      - --host 
+      - "0.0.0.0"
       - --port
       - "42421"
       - --log-level
-      - debug
+      - "debug"
+      - --ctx-size
+      - "65536"
+      - --llamacpp-args
+      - "-fa on --swa-full --no-mmap"
+      - --save-options
     networks:
       - ai-isolated
+# - "--flash-attn on --parallel 4 --no-mmap"
 
   tpu-worker:
     image: localai/localai:latest-tpu
