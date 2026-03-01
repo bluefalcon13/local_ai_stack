@@ -23,7 +23,7 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE
-    user: "$SERVICE_UID:$SERVICE_UID"
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     read_only: true
     restart: unless-stopped
     environment:
@@ -105,9 +105,9 @@ services:
       - ai-isolated
 
   # --- THE MUSCLE (STRIX HALO POWER) ---
-  lemonade-main:
+  llama-main:
     build:
-      context: ${CONFIG_ROOT}/lemonade/
+      context: ${CONFIG_ROOT}/llama.cpp/
       dockerfile: Dockerfile
       args:
         - UID=${SERVICE_UID}
@@ -115,9 +115,10 @@ services:
         - USERNAME=${SERVICE_USER}
         - VIDEO_GROUP=${VIDEO_GID}
         - RENDER_GROUP=${RENDER_GID}
-    image: strix-lemonade:latest
-    container_name: lemonade-main
+    image: strix-llama:latest
+    container_name: llama-main
     user: "${SERVICE_UID}:${SERVICE_UID}"
+    # user: root
     group_add:
       - ${VIDEO_GID}
       - ${RENDER_GID}
@@ -125,55 +126,126 @@ services:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
       - /dev/accel/accel0:/dev/accel/accel0
-    shm_size: '96gb'
+    shm_size: '24gb'
     security_opt:
       - seccomp:unconfined
     cap_add:
       - SYS_PTRACE
     restart: unless-stopped
-    tmpfs:
-      - /tmp:size=128M,mode=1777
     volumes:
-      - /home/${SERVICE_USER}/lemonade/models:/home/${SERVICE_USER}/models
-      - /home/${SERVICE_USER}/lemonade/state:/home/${SERVICE_USER}/.cache/lemonade
-      - /home/${SERVICE_USER}/lemonade/cache:/home/${SERVICE_USER}/.cache/huggingface
+      - /home/${SERVICE_USER}/cache/:/home/${SERVICE_USER}/.cache/
     environment:
-      - LEMONADE_EXTRA_MODELS_DIR=/home/${SERVICE_USER}/models
-      - ROC_ENABLE_PREFETCH_MSI=1
-      - HSA_ENABLE_SDMA=0
-      - ROCR_VISIBLE_DEVICES=0
-      - GGML_HIP_UMA=1
-      - GGML_HIP_ROCWMMA=ON
-      - LEMONADE_AUTOLOAD_MODEL=user.gemma-3-27b-it-qat-q4_0-gguf 
       - HF_TOKEN=${HUGGING_FACE_TOKEN}
-      - LEMONADE_DEBUG=1
-      - 'LEMONADE_LLAMACPP_ARGS=--flash-attn on --parallel 4 --ubatch-size 1024 --no-mmap'
-    command:
-      - lemonade-server
-      - run
-      - user.gemma-3-27b-it-qat-q4_0-gguf
-      - --no-tray
-      - --host 
-      - "0.0.0.0"
-      - --port
-      - "42421"
-      - --log-level
-      - "debug"
-      - --ctx-size
-      - "65536"
-      - --llamacpp-args
-      - "-fa on --swa-full --no-mmap"
-      - --save-options
+      - IMAGE="google/gemma-3-27b-it-qat-q4_0-gguf"
+      - AMD_LOG_LEVEL=3
+      - GGML_ROCM_DEBUG=1
+    command: > 
+      llama-server 
+      -hf google/gemma-3-27b-it-qat-q4_0-gguf 
+      -c 131072 -ngl 99 -fa on --cache-type-k q4_0
+      --cache-type-v q4_0 --no-mmap --host 0.0.0.0
+      --port 42421 --verbose-prompt
+    # network_mode: host
     networks:
       - ai-isolated
-# - "--flash-attn on --parallel 4 --no-mmap"
+
+  xdna-main:
+    build:
+      context: ${CONFIG_ROOT}/xdna_speculative_decoder/
+      dockerfile: Dockerfile
+      args:
+        - UID=${SERVICE_UID}
+        - GID=${SERVICE_UID}
+        - USERNAME=${SERVICE_USER}
+    image: xdna_speculative_decoder:latest
+    container_name: xdna-main
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    group_add:
+      - ${RENDER_GID}
+    devices:
+      - /dev/accel/accel0:/dev/accel/accel0
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    shm_size: '2gb'
+    restart: unless-stopped
+    volumes:
+      - /home/${SERVICE_USER}/xdna/models/:/home/${SERVICE_USER}/models/
+      - ${CONFIG_ROOT}/xdna_speculative_decoder/model_list.json:/home/${SERVICE_USER}/config/model_list.json:ro
+    environment:
+      - HF_TOKEN=${HUGGING_FACE_TOKEN}
+      - XDNA_NUM_WORKERS=4
+      - OMP_NUM_THREADS=4
+      - FLM_MODEL_PATH=/home/${SERVICE_USER}/models/
+      - VITIS_AI_EP_SESSION_OPTIONS=npu_device_id:0;config_file:/usr/local/lib/npu_config.json
+      - HF_HOME=/home/${SERVICE_USER}/models/
+      - FLM_CONFIG_PATH=/home/${SERVICE_USER}/config/model_list.json
+    command: tail -f /dev/null
+      # flm serve gemma3-1b 
+      # --host 0.0.0.0
+      # --port 8080
+      # --ctx-len 8192
+      # --pmode performance
+    network_mode: host
+    # networks:
+      # -ai-isolated
+
+  comfyui:
+    image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
+    container_name: strix-comfy
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.5.0
+      - ROCBLAS_USE_HIPBLASLT=1 # Critical for those sweet FP16/BF16 speeds
+      - PYTORCH_ROCM_ARCH=gfx1151
+    ports:
+      - "8188:8188"
+    volumes:
+      # Map to your local folders to keep weights persistent
+      - ./models:/root/comfy-models
+      - ./output:/opt/comfy-output
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    security_opt:
+      - seccomp=unconfined # Necessary for some ROCm memory hooks
+    # Kyuz0's specific runtime flags for Strix Halo
+    command: >
+      python main.py 
+      --bf16-vae 
+      --disable-mmap 
+      --cache-none 
+      --highvram
+    shm_size: '8gb'
+
+  hf-gatekeeper:
+    image: kalaksi/tinyproxy:latest
+    container_name: hf-gatekeeper
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    restart: no
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ${CONFIG_ROOT}/hf-gatekeeper/tinyproxy.conf:/etc/tinyproxy/tinyproxy.conf:ro
+      - ${CONFIG_ROOT}/hf-gatekeeper/whitelist.txt:/etc/tinyproxy/whitelist.txt:ro
+    networks:
+      - ai-isolated
+      - nat-internet
+    profiles: ["manual"]
 
   tpu-worker:
     image: localai/localai:latest-tpu
     container_name: tpu-worker
     user: "${SERVICE_UID}:${SERVICE_UID}"
     devices:
-      - /dev/apex_0:/dev/apex_0
+      - /dev/apex_0:/dev/apex_0d
     networks:
       - ai-isolated
 
@@ -211,3 +283,5 @@ networks:
   ai-isolated:
     driver: bridge
     internal: true
+  nat-internet:
+    driver: bridge

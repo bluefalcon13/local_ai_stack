@@ -1,0 +1,6 @@
+huggingface.co
+hf.co
+amazonaws.com
+cloudfront.net
+github.com
+ghcr.io
