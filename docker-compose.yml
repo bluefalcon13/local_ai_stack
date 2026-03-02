@@ -37,7 +37,6 @@ services:
       - ${CONFIG_ROOT}/caddy/cloudflare_certs:/etc/caddy/certs:ro
       - /home/${SERVICE_USER}/caddy/data:/data:rw
       - /home/${SERVICE_USER}/caddy/config:/config:rw
-      # Caddy also needs a small writeable space for temp files/shm
       - type: tmpfs
         target: /tmp
     ports:
@@ -61,6 +60,7 @@ services:
       - ai-isolated 
     depends_on:
       - langgraph-db
+    profiles: ["NOT_IMPLEMENTED"]
 
   langgraph-db:
     image: postgres:16
@@ -74,6 +74,7 @@ services:
       - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
     networks:
       - ai-isolated
+    profiles: ["NOT_IMPLEMENTED"]
 
   # --- THE INTERFACE ---
   open-webui:
@@ -94,8 +95,8 @@ services:
       - OPENID_PROVIDER_URL=https://accounts.google.com/.well-known/openid-configuration
       - DEFAULT_USER_ROLE=pending
       - ENABLE_SIGNUP=false
-      - 'OPENAI_API_BASE_URLS=http://lemonade-main:42421/v1;http://langgraph:8000/v1'
-      - 'OPENAI_API_KEYS=sk-lemonade;sk-langgraph' 
+      - 'OPENAI_API_BASE_URLS=http://langgraph:8000/v1'
+      - 'OPENAI_API_KEYS=sk-langgraph' 
       - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
     volumes:
       - /home/${SERVICE_USER}/webui_data:/app/backend/data
@@ -105,9 +106,9 @@ services:
       - ai-isolated
 
   # --- THE MUSCLE (STRIX HALO POWER) ---
-  llama-main:
+  lemonade-main:
     build:
-      context: ${CONFIG_ROOT}/llama.cpp/
+      context: ${CONFIG_ROOT}/lemonade/
       dockerfile: Dockerfile
       args:
         - UID=${SERVICE_UID}
@@ -115,10 +116,9 @@ services:
         - USERNAME=${SERVICE_USER}
         - VIDEO_GROUP=${VIDEO_GID}
         - RENDER_GROUP=${RENDER_GID}
-    image: strix-llama:latest
-    container_name: llama-main
+    image: strix-lemonade:latest
+    container_name: lemonade-main
     user: "${SERVICE_UID}:${SERVICE_UID}"
-    # user: root
     group_add:
       - ${VIDEO_GID}
       - ${RENDER_GID}
@@ -126,25 +126,41 @@ services:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
       - /dev/accel/accel0:/dev/accel/accel0
-    shm_size: '24gb'
+    shm_size: '96gb'
     security_opt:
       - seccomp:unconfined
     cap_add:
       - SYS_PTRACE
     restart: unless-stopped
+    tmpfs:
+      - /tmp:size=128M,mode=1777
     volumes:
-      - /home/${SERVICE_USER}/cache/:/home/${SERVICE_USER}/.cache/
+      - /home/${SERVICE_USER}/lemonade/models:/home/${SERVICE_USER}/models
+      - /home/${SERVICE_USER}/lemonade/state:/home/${SERVICE_USER}/.cache/
     environment:
+      - ROC_ENABLE_PREFETCH_MSI=1
+      - HSA_ENABLE_SDMA=0
+      - ROCR_VISIBLE_DEVICES=0
+      - GGML_HIP_UMA=1
+      - GGML_HIP_ROCWMMA=ON
       - HF_TOKEN=${HUGGING_FACE_TOKEN}
-      - IMAGE="google/gemma-3-27b-it-qat-q4_0-gguf"
-      - AMD_LOG_LEVEL=3
-      - GGML_ROCM_DEBUG=1
-    command: > 
-      llama-server 
-      -hf google/gemma-3-27b-it-qat-q4_0-gguf 
-      -c 131072 -ngl 99 -fa on --cache-type-k q4_0
-      --cache-type-v q4_0 --no-mmap --host 0.0.0.0
-      --port 42421 --verbose-prompt
+      - LEMONADE_DEBUG=1
+    command:
+      - lemonade-server
+      - run
+      - user.gemma-3-27B
+      - --no-tray
+      - --host 
+      - "0.0.0.0"
+      - --port
+      - "11434"
+      - --log-level
+      - "debug"
+      - --ctx-size
+      - "131072"
+      - --llamacpp-args
+      - "-fa on --no-mmap"
+      - --save-options
     # network_mode: host
     networks:
       - ai-isolated
@@ -164,6 +180,7 @@ services:
       - ${RENDER_GID}
     devices:
       - /dev/accel/accel0:/dev/accel/accel0
+      - /dev/accel/accel0:/dev/amdxdna
     ulimits:
       memlock:
         soft: -1
@@ -172,7 +189,8 @@ services:
     restart: unless-stopped
     volumes:
       - /home/${SERVICE_USER}/xdna/models/:/home/${SERVICE_USER}/models/
-      - ${CONFIG_ROOT}/xdna_speculative_decoder/model_list.json:/home/${SERVICE_USER}/config/model_list.json:ro
+      - /home/${SERVICE_USER}/xdna/config/:/home/${SERVICE_USER}/config/
+      - /usr/lib/firmware:/usr/lib/firmware:ro
     environment:
       - HF_TOKEN=${HUGGING_FACE_TOKEN}
       - XDNA_NUM_WORKERS=4
@@ -181,15 +199,18 @@ services:
       - VITIS_AI_EP_SESSION_OPTIONS=npu_device_id:0;config_file:/usr/local/lib/npu_config.json
       - HF_HOME=/home/${SERVICE_USER}/models/
       - FLM_CONFIG_PATH=/home/${SERVICE_USER}/config/model_list.json
-    command: tail -f /dev/null
-      # flm serve gemma3-1b 
-      # --host 0.0.0.0
-      # --port 8080
-      # --ctx-len 8192
-      # --pmode performance
-    network_mode: host
-    # networks:
-      # -ai-isolated
+    command:
+      - flm
+      - serve
+      - phi4-mini-it:4b 
+      - --host=0.0.0.0
+      - --port=8080
+      - --ctx-len=8192
+      - --pmode=turbo
+    # network_mode: host
+    networks:
+      - ai-isolated
+    profiles: ["manual"]
 
   comfyui:
     image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
@@ -212,7 +233,6 @@ services:
       - render
     security_opt:
       - seccomp=unconfined # Necessary for some ROCm memory hooks
-    # Kyuz0's specific runtime flags for Strix Halo
     command: >
       python main.py 
       --bf16-vae 
@@ -240,15 +260,6 @@ services:
       - nat-internet
     profiles: ["manual"]
 
-  tpu-worker:
-    image: localai/localai:latest-tpu
-    container_name: tpu-worker
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    devices:
-      - /dev/apex_0:/dev/apex_0d
-    networks:
-      - ai-isolated
-
   # --- SEARCH & METRICS ---
   searxng:
     image: docker.io/searxng/searxng:latest
@@ -260,20 +271,28 @@ services:
       - ${CONFIG_ROOT}/searxng:/etc/searxng:ro
     networks:
       - ai-search
+    profiles: ["NOT_IMPLEMENTED"]
 
   phoenix:
-    image: arizephoenix/phoenix:latest
+    image: arizephoenix/phoenix:nightly-nonroot
     container_name: phoenix
     user: "${SERVICE_UID}:${SERVICE_UID}"
+    ports:
+      - "6006:6006"
+    environment:
+      - PHOENIX_WORKING_DIR=/tmp/persistent/
     networks:
       - ai-frontend
-
-# Add this to capture the "Smoking Gun"
+      - ai-search
+      - ai-isolated
+    volumes:
+      - /home/${SERVICE_USER}/phoenix:/tmp/persistent/
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    profiles: ["NOT_IMPLEMENTED"]
 
 networks:
   ai-frontend:

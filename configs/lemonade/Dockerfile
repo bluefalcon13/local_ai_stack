@@ -4,57 +4,86 @@ ARG USERNAME=ai-svc
 ARG VIDEO_GROUP=123
 ARG RENDER_GROUP=456
 
-FROM ubuntu:24.04 AS base
+FROM archlinux:latest AS base
 ARG UID
 ARG GID
 ARG USERNAME
-ARG VIDEO_GROUP
-ARG RENDER_GROUP
 
-RUN --mount=type=bind,source=./install_rocm_deps.sh,target=/install_rocm_deps.sh \
-    /install_rocm_deps.sh
+# --- 1. Create User and Home Directory setup for final
+# stage. User can be utilized for paru installs
+RUN groupadd -g ${GID} ${USERNAME} || true && \
+    useradd -u ${UID} -g ${GID} -m -s /bin/bash ${USERNAME} && \
+    mkdir -p /home/${USERNAME}/.cache/lemonade \
+             /home/${USERNAME}/.cache/huggingface \
+             /home/${USERNAME}/models && \
+    chown -R ${USERNAME}:${USERNAME} /home/${USERNAME} && \
+    chmod -R 700 /home/${USERNAME}
 
-# install deps for both runtime and building
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake curl git gnupg libatomic1 \
-    libcurl4 libgomp1 libssl-dev libssl3 ninja-build pkg-config \
-    unzip wget zlib1g && \
-    rm -fr /var/lib/apt/lists/*
+# --- 2. System Setup & Core Dependencies ---
+RUN pacman-key --init && pacman -Syu --noconfirm && \
+    # Install Chaotic-AUR for pre-built paru and ROCm packages
+    pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com && \
+    pacman-key --lsign-key 3056513887B78AEB && \
+    pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+    'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' && \
+    echo -e "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist" >> /etc/pacman.conf && \
+    pacman -Sy && \
+    pacman -S --noconfirm --needed --ignore sudo \
+        base-devel \
+        blas \
+        cmake \
+        elfutils \
+        file \
+        git \
+        kmod \
+        lapack \
+        libdrm \
+        libglvnd \
+        libunwind \
+        ncurses \
+        ninja \
+        numactl \
+        ocl-icd \
+        openssl \
+        paru \
+        perl \
+        python \
+        python-pip \
+        suitesparse \
+        unzip \
+        wget && \
+    pacman -Scc --noconfirm
 
-RUN --mount=type=bind,source=./install_rocm_tarball.sh,target=/install_rocm_tarball.sh \
-    /install_rocm_tarball.sh 7.11.0 gfx1151 stable
+# --- 3. AUR Build (ROCm Binary) ---
+RUN su $USERNAME -c "git clone https://aur.archlinux.org/rocm-gfx1151-bin.git /tmp/rocm-aur" && \
+    cd /tmp/rocm-aur && \
+    su $USERNAME -c "makepkg --noconfirm" && \
+    pacman -U --noconfirm *.pkg.tar.zst && \
+    cd / && rm -rf /tmp/rocm-aur
 
-# ROCM/llama Vars
-ENV ROCM_PATH=/opt/rocm
-ENV PATH=${ROCM_PATH}/bin:$PATH \
-    ROCM_HOME="$ROCM_PATH" \
-    HIP_PATH="$ROCM_PATH" \
-    HIP_PLATFORM=amd \
-    HIP_CLANG_PATH="$ROCM_PATH/llvm/bin" \
-    HIP_INCLUDE_PATH="$ROCM_PATH/include" \
-    CMAKE_PREFIX_PATH="$ROCM_PATH/lib/cmake" \
-    HIP_DEVICE_LIB_PATH="$ROCM_PATH/lib/llvm/amdgcn/bitcode" \
-    AMDGPU_TARGETS=gfx1151 \
-    GPU_TARGETS=gfx1151
-ENV PATH="$HIP_CLANG_PATH/bin:$PATH"
-
-#create $USERNAME and groups with matching ids
-RUN useradd -u $UID -m -s /bin/bash $USERNAME
-
-RUN mkdir -p /home/$USERNAME/.cache/lemonade \
-             /home/$USERNAME/.cache/huggingface \
-             /home/$USERNAME/models && \
-    chown -R $USERNAME:$USERNAME /home/$USERNAME && \
-    chmod -R 700 /home/$USERNAME
-
-# add rocm libs to ld.so.conf.d so that ldconfig doesnt
-# act like a blind and lost child...
+    # Finalize user home, permissions, and system library paths
 RUN echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf && \
     echo "/opt/rocm/lib/llvm/lib" >> /etc/ld.so.conf.d/rocm.conf && \
     ldconfig
 
+# --- 4. Environment Variables ---
+ENV ROCM_PATH=/opt/rocm
+ENV PATH=${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:$PATH \
+    ROCM_HOME=${ROCM_PATH} \
+    HIP_PATH=${ROCM_PATH} \
+    HIP_PLATFORM=amd \
+    HIP_CLANG_PATH=${ROCM_PATH}/llvm/bin \
+    HIP_INCLUDE_PATH=${ROCM_PATH}/include \
+    CMAKE_PREFIX_PATH=${ROCM_PATH}/lib/cmake \
+    HIP_DEVICE_LIB_PATH=${ROCM_PATH}/lib/llvm/amdgcn/bitcode \
+    AMDGPU_TARGETS=gfx1151 \
+    GPU_TARGETS=gfx1151
+ENV PATH="$HIP_CLANG_PATH/bin:$PATH"
+
+# --- 5. Builder Stage ---
 FROM base AS builder
 WORKDIR /workdir
+
 # build lemonade
 RUN git clone https://github.com/lemonade-sdk/lemonade.git && \
     cd ./lemonade && \
@@ -105,7 +134,7 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git && \
         -DGGML_NATIVE=ON \
         -DGGML_STATIC=OFF \
         -DCMAKE_SYSTEM_NAME=Linux && \
-    cmake --build . -j$(nproc) 
+    cmake --build . -j$(nproc)
 
 # build SD.cpp
 RUN git clone --recursive https://github.com/lemonade-sdk/stable-diffusion.cpp.git && \
@@ -124,26 +153,28 @@ RUN git clone --recursive https://github.com/lemonade-sdk/stable-diffusion.cpp.g
         -DCMAKE_BUILD_TYPE=Release && \
     ninja sd-cli sd-server
 
+# --- 6. Final Stage ---
 FROM base AS final
 ARG USERNAME
 ARG UID
+ARG GID
 
-USER $USERNAME
-WORKDIR /home/$USERNAME
+USER ${USERNAME}
+WORKDIR /home/${USERNAME}
 
-# copy in llama binarie
-COPY --from=builder --chown=$UID:$UID --chmod=0754 /workdir/llama.cpp/build/bin/ /home/$USERNAME/llama/
+# copy in llama binaries
+COPY --from=builder --chown=${UID}:${GID} --chmod=0754 /workdir/llama.cpp/build/bin/ /home/${USERNAME}/llama/
 # copy in Lemonade binaries
-COPY --from=builder --chown=$UID:$UID --chmod=754 /workdir/lemonade/build/ /home/$USERNAME/lemonade/
+COPY --from=builder --chown=${UID}:${GID} --chmod=0754 /workdir/lemonade/build/ /home/${USERNAME}/lemonade/
 # copy in SD binaries
-COPY --from=builder --chown=$UID:$UID --chmod=0754 /workdir/stable-diffusion.cpp/build/bin/ /home/$USERNAME/stable-diffusion/
+COPY --from=builder --chown=${UID}:${GID} --chmod=0754 /workdir/stable-diffusion.cpp/build/bin/ /home/${USERNAME}/stable-diffusion/
 
-ENV LEMONADE_LLAMACPP_ROCM_BIN=/home/$USERNAME/llama/llama-server \
-    LEMONADE_SDCPP_ROCM_BIN=/home/$USERNAME/stable-diffusion/sd-server \
+ENV LEMONADE_LLAMACPP_ROCM_BIN=/home/${USERNAME}/llama/llama-server \
+    LEMONADE_SDCPP_ROCM_BIN=/home/${USERNAME}/stable-diffusion/sd-server \
     LEMONADE_LLAMACPP_BACKEND=rocm \
     LEMONADE_LLAMACPP=rocm \
     LEMONADE_OFFLINE_MODE=1 \
-    PATH="/home/$USERNAME/lemonade:/home/$USERNAME/llama:$PATH"
+    PATH="/home/${USERNAME}/lemonade:/home/${USERNAME}/llama:${PATH}"
 
 # Default command: start server in headless mode
 CMD ["lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0", "--port", "42421"]
