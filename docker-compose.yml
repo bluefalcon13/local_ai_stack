@@ -41,8 +41,10 @@ services:
         target: /tmp
     ports:
       - "192.168.50.4:443:443"
+      - "192.168.50.4:42421:42421"
     networks:
       - ai-frontend
+      - lemonade-internal
 
   # --- THE AGENTIC BRAIN ---
   langgraph:
@@ -142,6 +144,8 @@ services:
     volumes:
       - /home/${SERVICE_USER}/lemonade/models:/home/${SERVICE_USER}/models
       - /home/${SERVICE_USER}/lemonade/state:/home/${SERVICE_USER}/.cache/
+      - /home/${SERVICE_USER}/lemonade/flm_models:/home/${SERVICE_USER}/.config/flm/models
+
     environment:
       - ROC_ENABLE_PREFETCH_MSI=1
       - HSA_ENABLE_SDMA=0
@@ -161,6 +165,7 @@ services:
       - "0.0.0.0"
       - --port
       - "11434"
+      # - "42421"
       - --log-level
       - "debug"
       - --ctx-size
@@ -168,57 +173,12 @@ services:
       - --llamacpp-args
       - "-fa on --no-mmap --cache-type-k q4_0 --cache-type-v q4_0"
       - --save-options
-    # network_mode: host
-    networks:
-      - ai-isolated
-
-  xdna-main:
-    build:
-      context: ${CONFIG_ROOT}/xdna_speculative_decoder/
-      dockerfile: Dockerfile
-      args:
-        - UID=${SERVICE_UID}
-        - GID=${SERVICE_UID}
-        - USERNAME=${SERVICE_USER}
-    image: xdna_speculative_decoder:latest
-    container_name: xdna-main
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    group_add:
-      - ${RENDER_GID}
-    devices:
-      - /dev/accel/accel0:/dev/accel/accel0
-      - /dev/accel/accel0:/dev/amdxdna
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    shm_size: '2gb'
-    ipc: host
-    restart: unless-stopped
-    volumes:
-      - /home/${SERVICE_USER}/xdna/models/:/home/${SERVICE_USER}/models/
-      - /home/${SERVICE_USER}/xdna/config/:/home/${SERVICE_USER}/config/
-      - /usr/lib/firmware:/usr/lib/firmware:ro
-    environment:
-      - HF_TOKEN=${HUGGING_FACE_TOKEN}
-      - XDNA_NUM_WORKERS=4
-      - OMP_NUM_THREADS=4
-      - FLM_MODEL_PATH=/home/${SERVICE_USER}/models/
-      - VITIS_AI_EP_SESSION_OPTIONS=npu_device_id:0;config_file:/usr/local/lib/npu_config.json
-      - HF_HOME=/home/${SERVICE_USER}/models/
-      - FLM_CONFIG_PATH=/home/${SERVICE_USER}/config/model_list.json
-    command:
-      - flm
-      - serve
-      - phi4-mini-it:4b 
-      - --host=0.0.0.0
-      - --port=8080
-      - --ctx-len=8192
-      - --pmode=turbo
-    # network_mode: host
-    networks:
-      - ai-isolated
-    profiles: ["manual"]
+    network_mode: host
+    # networks:
+    #   ai-isolated:
+    #   lemonade-internal:
+    #     aliases:
+    #       - lemonade-backend
 
   comfyui:
     image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
@@ -248,6 +208,7 @@ services:
       --cache-none 
       --highvram
     shm_size: '8gb'
+    profiles: ["NOT_IMPLEMENTED"]
 
   hf-gatekeeper:
     image: kalaksi/tinyproxy:latest
@@ -308,6 +269,9 @@ networks:
   ai-search:
     driver: bridge
   ai-isolated:
+    driver: bridge
+    internal: true
+  lemonade-internal:
     driver: bridge
     internal: true
   nat-internet:

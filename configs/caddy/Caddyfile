@@ -4,7 +4,7 @@
     # servers {
     #     trusted_proxies static 172.18.0.0/16
     # }
-    https_port 8443
+    # https_port 8443
 }
 
 {$DOMAIN_NAME}:443, {$DOMAIN_NAME}:8443 {
@@ -43,5 +43,26 @@
     reverse_proxy open-webui:8080 {
         header_up Host {host}
         header_up X-Real_IP {remote_host}
+    }
+}
+
+# Listen only on port 11434
+:42421 {
+    handle {
+    respond "Caddy saw you from {remote_host}, but you didn't match the IP gate." 200
+}
+    # Matcher: Only allow the internal 50.x subnet
+    @internal_lan {
+        remote_ip 192.168.50.0/24 172.16.0.0/12 10.0.0.0/8
+    }
+
+    # Handle internal traffic
+    handle @internal_lan {
+        reverse_proxy lemonade-backend:11434
+    }
+
+    # Fallback: Abort for everyone else (external or other subnets)
+    handle {
+        abort
     }
 }

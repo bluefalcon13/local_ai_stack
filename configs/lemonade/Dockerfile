@@ -15,7 +15,8 @@ RUN groupadd -g ${GID} ${USERNAME} || true && \
     useradd -u ${UID} -g ${GID} -m -s /bin/bash ${USERNAME} && \
     mkdir -p /home/${USERNAME}/.cache/lemonade \
              /home/${USERNAME}/.cache/huggingface \
-             /home/${USERNAME}/models && \
+             /home/${USERNAME}/models \
+             /home/${USERNAME}/.config/flm/models && \
     chown -R ${USERNAME}:${USERNAME} /home/${USERNAME} && \
     chmod -R 700 /home/${USERNAME}
 
@@ -50,6 +51,7 @@ RUN pacman-key --init && \
         suitesparse \
         unzip \
         wget \
+        which \
         xrt \
         xrt-plugin-amdxdna && \
     pacman -Scc --noconfirm
@@ -200,6 +202,7 @@ WORKDIR /home/${USERNAME}
 
 ENV LEMONADE_LLAMACPP_ROCM_BIN=/home/${USERNAME}/llama/llama-server \
     LEMONADE_SDCPP_ROCM_BIN=/home/${USERNAME}/stable-diffusion/sd-server \
+    LEMONADE_FLM_BIN=/usr/local/bin/flm \
     LEMONADE_LLAMACPP_BACKEND=rocm \
     LEMONADE_LLAMACPP=rocm \
     LEMONADE_OFFLINE_MODE=1 \
