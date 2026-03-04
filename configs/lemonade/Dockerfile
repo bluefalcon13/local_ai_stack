@@ -20,15 +20,11 @@ RUN groupadd -g ${GID} ${USERNAME} || true && \
     chmod -R 700 /home/${USERNAME}
 
 # --- 2. System Setup & Core Dependencies ---
-RUN pacman-key --init && pacman -Syu --noconfirm && \
-    # Install Chaotic-AUR for pre-built paru and ROCm packages
-    pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com && \
-    pacman-key --lsign-key 3056513887B78AEB && \
-    pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
-    'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' && \
-    echo -e "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist" >> /etc/pacman.conf && \
-    pacman -Sy && \
-    pacman -S --noconfirm --needed --ignore sudo \
+RUN pacman-key --init && \
+    sed -i '/^#\[core-testing\]/,/^#Include/ s/^#//' /etc/pacman.conf && \
+    sed -i '/^#\[extra-testing\]/,/^#Include/ s/^#//' /etc/pacman.conf && \
+    pacman -Syu --noconfirm && \
+    pacman -S --noconfirm --needed --assume-installed sudo \
         base-devel \
         blas \
         cmake \
@@ -42,32 +38,37 @@ RUN pacman-key --init && pacman -Syu --noconfirm && \
         libunwind \
         ncurses \
         ninja \
+        npm \
+        nodejs \
         numactl \
         ocl-icd \
         openssl \
-        paru \
         perl \
         python \
         python-pip \
+        python-pyelftools \
         suitesparse \
         unzip \
-        wget && \
+        wget \
+        xrt \
+        xrt-plugin-amdxdna && \
     pacman -Scc --noconfirm
 
 # --- 3. AUR Build (ROCm Binary) ---
-RUN su $USERNAME -c "git clone https://aur.archlinux.org/rocm-gfx1151-bin.git /tmp/rocm-aur" && \
-    cd /tmp/rocm-aur && \
-    su $USERNAME -c "makepkg --noconfirm" && \
-    pacman -U --noconfirm *.pkg.tar.zst && \
-    cd / && rm -rf /tmp/rocm-aur
+COPY ./sideload/rocm-gfx1151-bin-7.11.0pre-1-x86_64.pkg.tar.zst /tmp/rocm/
+RUN --mount=type=bind,src=./sideload/,dst=/tmp/sideload/ \
+    pacman -U /tmp/sideload/rocm-gfx1151-bin-7.11.0pre-1-x86_64.pkg.tar.zst --noconfirm && \
+    pacman -Scc --noconfirm
 
     # Finalize user home, permissions, and system library paths
 RUN echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf && \
     echo "/opt/rocm/lib/llvm/lib" >> /etc/ld.so.conf.d/rocm.conf && \
+    echo "/usr/lib" > /etc/ld.so.conf.d/xrt.conf && \
     ldconfig
 
 # --- 4. Environment Variables ---
-ENV ROCM_PATH=/opt/rocm
+ENV ROCM_PATH=/opt/rocm \
+    XILINX_XRT=/usr
 ENV PATH=${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:$PATH \
     ROCM_HOME=${ROCM_PATH} \
     HIP_PATH=${ROCM_PATH} \
@@ -87,11 +88,16 @@ WORKDIR /workdir
 # build lemonade
 RUN git clone https://github.com/lemonade-sdk/lemonade.git && \
     cd ./lemonade && \
-    cmake -B build -S . \
+    cmake -G Ninja -B build -S . \
         -DCMAKE_BUILD_TYPE=Release \
-        -DLEMONADE_BUILD_WEBUI=ON \
-        -DLEMONADE_BUILD_SERVER=ON && \
-    cmake --build build --preset default web-ui -j$(nproc)
+        -DLEMONADE_ENABLE_RYZENAI=ON \
+        -DCMAKE_C_FLAGS="-march=native -O3 -pipe" \
+        -DCMAKE_CXX_FLAGS="-march=native -O3 -pipe" && \
+    cmake --build build \
+        --target lemonade-server \
+        --target lemonade-router \
+        --target web-app \
+        -j$(nproc)
 
 # build llama.cpp
 RUN git clone https://github.com/ggml-org/llama.cpp.git && \
@@ -151,7 +157,7 @@ RUN git clone --recursive https://github.com/lemonade-sdk/stable-diffusion.cpp.g
         -DGGML_HIPBLASLT=ON \
         -DGGML_NATIVE=ON \
         -DCMAKE_BUILD_TYPE=Release && \
-    ninja sd-cli sd-server
+    ninja sd-cli sd-server -j$(nproc)
 
 # --- 6. Final Stage ---
 FROM base AS final
@@ -159,21 +165,46 @@ ARG USERNAME
 ARG UID
 ARG GID
 
-USER ${USERNAME}
-WORKDIR /home/${USERNAME}
-
 # copy in llama binaries
 COPY --from=builder --chown=${UID}:${GID} --chmod=0754 /workdir/llama.cpp/build/bin/ /home/${USERNAME}/llama/
-# copy in Lemonade binaries
-COPY --from=builder --chown=${UID}:${GID} --chmod=0754 /workdir/lemonade/build/ /home/${USERNAME}/lemonade/
+# copy in Lemonade binaries and web-app
+COPY --from=builder --chown=${UID}:${GID} --chmod=0754 \
+    /workdir/lemonade/build/lemonade-router \
+    /workdir/lemonade/build/lemonade-server \
+    /home/${USERNAME}/lemonade/
+
+COPY --from=builder --chown=${UID}:${GID} --chmod=0754 \
+    /workdir/lemonade/build/resources/ \
+    /home/${USERNAME}/lemonade/resources/
 # copy in SD binaries
-COPY --from=builder --chown=${UID}:${GID} --chmod=0754 /workdir/stable-diffusion.cpp/build/bin/ /home/${USERNAME}/stable-diffusion/
+COPY --from=builder --chown=${UID}:${GID} --chmod=0754 \
+    /workdir/stable-diffusion.cpp/build/bin/ \
+    /home/${USERNAME}/stable-diffusion/
+
+RUN pacman -S --noconfirm base-devel boost git cmake ninja rust  ffmpeg && \
+    git clone --recursive https://github.com/FastFlowLM/FastFlowLM.git /tmp/FastFlowLM && \
+    cd /tmp/FastFlowLM/src && \
+    cmake --preset linux-default -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CXX_FLAGS="-march=native -O3 -pipe" \
+        -DXRT_DIR="/usr" && \
+    cmake --build build -j$(nproc) && \
+    cmake --install build && \
+    cd / && \
+    rm -rf /tmp/FastFlowLM && \
+    pacman -Rs --noconfirm base-devel git cmake ninja rust && \
+    pacman -Scc --noconfirm
+
+USER ${USERNAME}
+WORKDIR /home/${USERNAME}
 
 ENV LEMONADE_LLAMACPP_ROCM_BIN=/home/${USERNAME}/llama/llama-server \
     LEMONADE_SDCPP_ROCM_BIN=/home/${USERNAME}/stable-diffusion/sd-server \
     LEMONADE_LLAMACPP_BACKEND=rocm \
     LEMONADE_LLAMACPP=rocm \
     LEMONADE_OFFLINE_MODE=1 \
+    ROCBLAS_USE_HIPBLASLT=1 \
+    LEMONADE_USE_NPU=1 \
     PATH="/home/${USERNAME}/lemonade:/home/${USERNAME}/llama:${PATH}"
 
 # Default command: start server in headless mode

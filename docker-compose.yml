@@ -126,11 +126,16 @@ services:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
       - /dev/accel/accel0:/dev/accel/accel0
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     shm_size: '96gb'
     security_opt:
       - seccomp:unconfined
     cap_add:
       - SYS_PTRACE
+    ipc: host
     restart: unless-stopped
     tmpfs:
       - /tmp:size=128M,mode=1777
@@ -145,6 +150,8 @@ services:
       - GGML_HIP_ROCWMMA=ON
       - HF_TOKEN=${HUGGING_FACE_TOKEN}
       - LEMONADE_DEBUG=1
+      - ROCM_USE_USER_QUEUE=1
+      - LEMONADE_FLM_LINUX_BETA=1
     command:
       - lemonade-server
       - run
@@ -159,7 +166,7 @@ services:
       - --ctx-size
       - "131072"
       - --llamacpp-args
-      - "-fa on --no-mmap"
+      - "-fa on --no-mmap --cache-type-k q4_0 --cache-type-v q4_0"
       - --save-options
     # network_mode: host
     networks:
@@ -186,6 +193,7 @@ services:
         soft: -1
         hard: -1
     shm_size: '2gb'
+    ipc: host
     restart: unless-stopped
     volumes:
       - /home/${SERVICE_USER}/xdna/models/:/home/${SERVICE_USER}/models/

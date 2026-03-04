@@ -1,13 +1,13 @@
 # 1. Secret Environment Variables
 .env
 
-# 2. SSL/Identity Vault
-# We ignore the contents so your private keys stay off the web
+# 2. ignore specific project folders/subfolders
 configs/caddy/cloudflare_certs/*
+configs/lemonade/sideload/*
 
 # 3. Keep the directory structure
-# This ensures the 'certs' folder exists when you clone the repo
 !configs/caddy/cloudflare_certs/.gitkeep
+!configs/lemonade/sideload/.gitkeep
 
 # 4. OS/Editor Junk
 .DS_Store
@@ -15,4 +15,3 @@ Thumbs.dub
 .vscode
 .continue
 
-# 5. ignore llama.cpp folder
