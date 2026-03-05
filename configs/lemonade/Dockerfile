@@ -202,12 +202,12 @@ WORKDIR /home/${USERNAME}
 
 ENV LEMONADE_LLAMACPP_ROCM_BIN=/home/${USERNAME}/llama/llama-server \
     LEMONADE_SDCPP_ROCM_BIN=/home/${USERNAME}/stable-diffusion/sd-server \
-    LEMONADE_FLM_BIN=/usr/local/bin/flm \
     LEMONADE_LLAMACPP_BACKEND=rocm \
     LEMONADE_LLAMACPP=rocm \
     LEMONADE_OFFLINE_MODE=1 \
     ROCBLAS_USE_HIPBLASLT=1 \
     LEMONADE_USE_NPU=1 \
+    GGML_NUMA=1 \
     PATH="/home/${USERNAME}/lemonade:/home/${USERNAME}/llama:${PATH}"
 
 # Default command: start server in headless mode

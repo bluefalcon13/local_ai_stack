@@ -42,6 +42,7 @@ services:
     ports:
       - "192.168.50.4:443:443"
       - "192.168.50.4:42421:42421"
+      - "192.168.50.4:42422:42422"
     networks:
       - ai-frontend
       - lemonade-internal
@@ -156,59 +157,78 @@ services:
       - LEMONADE_DEBUG=1
       - ROCM_USE_USER_QUEUE=1
       - LEMONADE_FLM_LINUX_BETA=1
+      - LEMONADE_MAX_LOADED_MODELS=2
     command:
       - lemonade-server
       - run
+      # - serve
       - user.gemma-3-27B
       - --no-tray
       - --host 
       - "0.0.0.0"
       - --port
       - "11434"
-      # - "42421"
-      - --log-level
-      - "debug"
-      - --ctx-size
-      - "131072"
-      - --llamacpp-args
-      - "-fa on --no-mmap --cache-type-k q4_0 --cache-type-v q4_0"
-      - --save-options
-    network_mode: host
-    # networks:
-    #   ai-isolated:
-    #   lemonade-internal:
-    #     aliases:
-    #       - lemonade-backend
+    # network_mode: host
+    networks:
+      ai-isolated:
+      lemonade-internal:
+        aliases:
+          - lemonade-backend
 
-  comfyui:
-    image: docker.io/kyuz0/amd-strix-halo-comfyui:latest
-    container_name: strix-comfy
+  comfy-strix:
+    container_name: comfy-strix
+    build:
+      context: ${CONFIG_ROOT}/comfyui/
+      dockerfile: Dockerfile
+      args:
+        - UID=${SERVICE_UID}
+        - GID=${SERVICE_UID}
+        - USERNAME=${SERVICE_USER}
+    user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
-      - HSA_OVERRIDE_GFX_VERSION=11.5.0
       - ROCBLAS_USE_HIPBLASLT=1 # Critical for those sweet FP16/BF16 speeds
       - PYTORCH_ROCM_ARCH=gfx1151
     ports:
       - "8188:8188"
     volumes:
       # Map to your local folders to keep weights persistent
-      - ./models:/root/comfy-models
-      - ./output:/opt/comfy-output
+      - /home/${SERVICE_USER}/comfy/models:/opt/ComfyUI/models
+      - /home/${SERVICE_USER}/comfy/output:/opt/ComfyUI/output
+      - /home/${SERVICE_USER}comfy/custom_nodes:/opt/ComfyUI/custom_nodes
+      - /home/${SERVICE_USER}/comfy/user:/opt/ComfyUI/user
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
     group_add:
-      - video
-      - render
+      - ${VIDEO_GID}
+      - ${RENDER_GID}
     security_opt:
-      - seccomp=unconfined # Necessary for some ROCm memory hooks
+      - seccomp=unconfined
+    ipc: host
+    restart: unless-stopped
+    cap_add:
+      - SYS_PTRACE
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    entrypoint: [""]
     command: >
-      python main.py 
-      --bf16-vae 
-      --disable-mmap 
-      --cache-none 
-      --highvram
-    shm_size: '8gb'
-    profiles: ["NOT_IMPLEMENTED"]
+      python3 /opt/ComfyUI/main.py 
+      --listen 0.0.0.0 
+      --port 8188 
+      --base-directory /opt/ComfyUI
+      --fp8_e4m3fn-unet 
+      --fp8_e4m3fn-text-enc 
+      --highvram 
+      --use-sage-attention
+      --preview-method auto
+    shm_size: '30gb'
+    networks:
+      ai-isolated:
+      lemonade-internal:
+        aliases:
+          - comfy-backend
 
   hf-gatekeeper:
     image: kalaksi/tinyproxy:latest

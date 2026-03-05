@@ -1,3 +1,0 @@
-[submodule "configs/lemonade/llama.cpp"]
-	path = configs/lemonade/llama.cpp
-	url = https://github.com/ggml-org/llama.cpp.git
