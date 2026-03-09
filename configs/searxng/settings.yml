@@ -1,0 +1,25 @@
+# SearXNG 1.0 Hardened Config
+use_default_settings: True
+
+server:
+  limiter: False  # You're running locally, you don't need to rate-limit yourself
+  image_proxy: True # Helps Flux/Gemma see images without direct-leaking your IP
+
+search:
+  safe_search: 0
+  autocomplete: google
+  formats:
+    - html
+    - json # MANDATORY for the Agentic "Road-builder" to parse results
+
+# Only enable the heavy hitters to keep the Strix Halo snappy
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+  - name: github
+    engine: github
+    shortcut: gh

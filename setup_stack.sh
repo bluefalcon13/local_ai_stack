@@ -95,6 +95,8 @@ DATA_DIRS=(
     "models"
 )
 
+# TODO: setup ln -s to mirror .env from projectdir to firecrawl
+
 for dir in "${DATA_DIRS[@]}"; do
     sudo mkdir -p "/home/$SERVICE_USER/$dir"
 done

@@ -29,6 +29,7 @@ RUN pacman-key --init && \
         base-devel \
         blas \
         cmake \
+        curl \
         elfutils \
         file \
         git \
@@ -138,7 +139,7 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git && \
         -DGGML_CUDA_FA_ALL_QUANTS=ON \
         -DGGML_CUDA_F16_256=ON \
         -DLLAMA_HIP_UMA=ON \
-        -DLLAMA_CURL=OFF \
+        -DLLAMA_CURL=ON \
         -DGGML_NATIVE=ON \
         -DGGML_STATIC=OFF \
         -DCMAKE_SYSTEM_NAME=Linux && \

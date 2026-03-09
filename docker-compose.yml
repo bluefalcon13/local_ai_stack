@@ -54,8 +54,10 @@ services:
     restart: unless-stopped
     user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
-      - OLLAMA_BASE_URL=http://ollama-main:11434
-      - DATABASE_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@langgraph-db:5432/${POSTGRES_DB}
+      - OPENAI_API_BASE_URL=http://lemonade-main:11434/v1
+      - RAG_OPENAI_API_BASE_URL=http://lemonade-main:11434/v1
+      - OPENAI_API_KEY=sk-local
+      - DATABASE_URI=postgres://${LANG_POSTGRES_USER}:${LANG_POSTGRES_PASSWORD}@nuq-postgres:5432/${LANG_POSTGRES_DB}
     volumes:
       - ${CONFIG_ROOT}/langgraph/agents:/app/agents
     networks:
@@ -65,23 +67,12 @@ services:
       - langgraph-db
     profiles: ["NOT_IMPLEMENTED"]
 
-  langgraph-db:
-    image: postgres:16
-    container_name: langgraph-db
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - /home/${SERVICE_USER}/langgraph_db:/var/lib/postgresql/data
-    networks:
-      - ai-isolated
-    profiles: ["NOT_IMPLEMENTED"]
-
   # --- THE INTERFACE ---
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    build:
+      context: ${CONFIG_ROOT}/open-webui/
+      dockerfile: Dockerfile
+    # image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
     user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
@@ -98,9 +89,24 @@ services:
       - OPENID_PROVIDER_URL=https://accounts.google.com/.well-known/openid-configuration
       - DEFAULT_USER_ROLE=pending
       - ENABLE_SIGNUP=false
-      - 'OPENAI_API_BASE_URLS=http://langgraph:8000/v1'
-      - 'OPENAI_API_KEYS=sk-langgraph' 
-      - 'SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>'
+      - OPENAI_API_BASE_URLS=http://langgraph:8000/v1
+      - OPENAI_API_KEYS=sk-langgraph
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+      - ENABLE_OTEL=true
+      - ENABLE_OTEL_TRACES=true
+      - ENABLE_OTEL_METRICS=false
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc    # Force gRPC protocol
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_TRACES_EXPORTER=otlp
+      - USE_OTEL_LITELLM_REQUEST_SPAN=true  # Still critical for your chat traces
+      - OTEL_SERVICE_NAME=open-webui
+      - OTEL_PYTHON_REQUESTS_EXCLUDED_URLS=".*/batch/.*|.*/scrape/.*|.*/health"
+      - OTEL_BSP_MAX_QUEUE_SIZE=10000        # Increase buffer for your 7k+ spikes
+      - OTEL_BSP_SCHEDULE_DELAY_MILLIS=1000 # Send every 1 second
+      - OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512
+      - RAG_EMBEDDING_BATCH_SIZE=4
+      - RAG_EMBEDDING_TIMEOUT=300
     volumes:
       - /home/${SERVICE_USER}/webui_data:/app/backend/data
     networks:
@@ -146,7 +152,6 @@ services:
       - /home/${SERVICE_USER}/lemonade/models:/home/${SERVICE_USER}/models
       - /home/${SERVICE_USER}/lemonade/state:/home/${SERVICE_USER}/.cache/
       - /home/${SERVICE_USER}/lemonade/flm_models:/home/${SERVICE_USER}/.config/flm/models
-
     environment:
       - ROC_ENABLE_PREFETCH_MSI=1
       - HSA_ENABLE_SDMA=0
@@ -232,25 +237,6 @@ services:
         aliases:
           - comfy-backend
 
-  hf-gatekeeper:
-    image: kalaksi/tinyproxy:latest
-    container_name: hf-gatekeeper
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    restart: no
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-    volumes:
-      - ${CONFIG_ROOT}/hf-gatekeeper/tinyproxy.conf:/etc/tinyproxy/tinyproxy.conf:ro
-      - ${CONFIG_ROOT}/hf-gatekeeper/whitelist.txt:/etc/tinyproxy/whitelist.txt:ro
-    networks:
-      - ai-isolated
-      - nat-internet
-    profiles: ["manual"]
-
   # --- SEARCH & METRICS ---
   searxng:
     image: docker.io/searxng/searxng:latest
@@ -262,14 +248,128 @@ services:
       - SEARXNG_SECRET=${SEARXNG_SECRET}
       - FORCE_OWNERSHIP=false 
     volumes:
-      - /home/${SERVICE_USER}/searxng_config:/etc/searxng:rw
+      - /home/${SERVICE_USER}/searxng/config:/etc/searxng:rw
+      - /home/${SERVICE_USER}/searxng/logs:/var/log/searxng:rw
     ports:
       - "8080:8080"
     networks:
       - ai-search
     # network_mode: host
     restart: unless-stopped
-    profiles: ["NOT_IMPLEMENTED"]
+
+  tika:
+    image: apache/tika:latest-full
+    container_name: tika
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    ports:
+      - "9998:9998"
+    restart: always
+    networks:
+      - ai-search
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9998/tika"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+  # --- Webcrawl via firecrawl ---
+  nuq-postgres:
+    extends:
+      file: ${CONFIG_ROOT}/firecrawl/docker-compose.yaml
+      service: nuq-postgres
+    container_name: nuq-postgres
+    networks:
+      - ai-search
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    volumes:
+      - /home/${SERVICE_USER}/local_ai_db:/var/lib/postgresql/data
+      - ${CONFIG_ROOT}/data_base_config/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+      # Path updated to configs/firecrawl
+      - ${CONFIG_ROOT}/firecrawl/apps/nuq-postgres/nuq.sql:/firecrawl_setup/nuq.sql:ro
+    environment:
+      - POSTGRES_USER=${SERVICE_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - FIRE_POSTGRES_USER=${FIRE_POSTGRES_USER}
+      - FIRE_POSTGRES_PASSWORD=${FIRE_POSTGRES_PASSWORD}
+      - FIRE_POSTGRES_DB=${FIRE_POSTGRES_DB}
+      - LANG_POSTGRES_USER=${LANG_POSTGRES_USER}
+      - LANG_POSTGRES_PASSWORD=${LANG_POSTGRES_PASSWORD}
+      - LANG_POSTGRES_DB=${LANG_POSTGRES_DB}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command: 
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_cron"
+      - "-c"
+      - "cron.database_name=${POSTGRES_DB:-firecrawl}"
+
+  # --- FIRECRAWL API ---
+  api:
+    extends:
+      file: ${CONFIG_ROOT}/firecrawl/docker-compose.yaml
+      service: api
+    container_name: api
+    networks:
+      - ai-search
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    environment:
+      - DATABASE_URL=postgresql://${FIRE_POSTGRES_USER}:${FIRE_POSTGRES_PASSWORD}@nuq-postgres:5432/${FIRE_POSTGRES_DB}
+      - REDIS_URL=${FIRE_REDIS_URL}
+      - PLAYWRIGHT_MICROSERVICE_URL=${PLAYWRIGHT_MICROSERVICE_URL}
+      - SELF_HOSTED_PLAYWRIGHT=true
+      - API_KEY=${FIRE_API_KEY}
+      - SCRAPE_TIMEOUT=60000
+      - PAGE_TIMEOUT=30000
+    depends_on:
+      rabbitmq:
+        condition: service_healthy # Wait for the Rabbit to be READY
+      nuq-postgres:
+        condition: service_healthy
+
+  # --- PLAYWRIGHT (The Browser) ---
+  playwright-service:
+    extends:
+      file: ${CONFIG_ROOT}/firecrawl/docker-compose.yaml
+      service: playwright-service
+    container_name: playwright-service
+    networks:
+      - ai-search
+    # Resource limits to protect your Strix Halo's RAM for LLMs
+
+  rabbitmq:
+    extends:
+      file: ${CONFIG_ROOT}/firecrawl/docker-compose.yaml
+      service: rabbitmq
+    container_name: rabbitmq
+    networks:
+      - ai-search
+    # No ports needed unless you want to see the dashboard at 15672
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # --- REDIS (The Queue) ---
+  redis:
+    extends:
+      file: ${CONFIG_ROOT}/firecrawl/docker-compose.yaml
+      service: redis
+    container_name: redis
+    networks:
+      - ai-search
+    user: "${SERVICE_UID}:${SERVICE_UID}"
+    deploy:
+      resources:
+        limits:
+          memory: 1G 
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
 
   phoenix:
     image: arizephoenix/phoenix:nightly-nonroot
@@ -279,6 +379,9 @@ services:
       - "6006:6006"
     environment:
       - PHOENIX_WORKING_DIR=/tmp/persistent/
+      - PHOENIX_PORT=6006
+      - PHOENIX_GRPC_PORT=4317
+      - PHOENIX_HTTP_PORT=4318
     networks:
       - ai-frontend
       - ai-search
@@ -290,12 +393,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    profiles: ["NOT_IMPLEMENTED"]
 
 networks:
   ai-frontend:
     driver: bridge
   ai-search:
+    name: ai-search
     driver: bridge
   ai-isolated:
     driver: bridge
@@ -304,4 +407,9 @@ networks:
     driver: bridge
     internal: true
   nat-internet:
+    name: nat-internet
     driver: bridge
+  backend:
+    name: ai-search
+    driver: bridge
+    external: true
