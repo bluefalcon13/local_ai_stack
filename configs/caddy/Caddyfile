@@ -55,7 +55,7 @@
 
     # Handle internal traffic
     handle @internal_lan {
-        reverse_proxy lemonade-backend:11434
+        reverse_proxy llama-backend:42421
     }
 
     # Fallback: Abort for everyone else (external or other subnets)
@@ -63,6 +63,7 @@
         abort
     }
 }
+
 # Listen only on port 42422
 :42422 {
     # Matcher: Only allow the internal 50.x subnet

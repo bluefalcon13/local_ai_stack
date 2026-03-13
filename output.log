@@ -1,0 +1,231 @@
+ Container llama-main Creating 
+ Container llama-main Created 
+Attaching to llama-main
+ Container llama-main Starting 
+ Container llama-main Started 
+llama-main  | ggml_cuda_init: found 1 ROCm devices (Total VRAM: 112640 MiB):
+llama-main  |   Device 0: Radeon 8060S Graphics, gfx1151 (0x1151), VMM: no, Wave Size: 32, VRAM: 112640 MiB (112635 MiB free)
+llama-main  | main: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true
+llama-main  | build: 8310 (246ffc4b0) with Clang 22.0.0 for Linux x86_64
+llama-main  | system info: n_threads = 16, n_threads_batch = 16, total_threads = 32
+llama-main  | 
+llama-main  | system_info: n_threads = 16 (n_threads_batch = 16) / 32 | ROCm : NO_VMM = 1 | PEER_MAX_BATCH_SIZE = 128 | FA_ALL_QUANTS = 1 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX_VNNI = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | AVX512 = 1 | AVX512_VBMI = 1 | AVX512_VNNI = 1 | AVX512_BF16 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+llama-main  | 
+llama-main  | Running without SSL
+llama-main  | init: using 31 threads for HTTP server
+llama-main  | start: binding port with default address family
+llama-main  | main: loading model
+llama-main  | srv    load_model: loading model '/home/ai-svc/models/gemma-3-27b-it/gemma-3-27b-it-Q4_K_M.gguf'
+llama-main  | common_init_result: fitting params to device memory, for bugs during this step try to reproduce them with -fit off, or provide --verbose logs if the bug only occurs with -fit on
+llama-main  | llama_params_fit_impl: projected to use 19703 MiB of device memory vs. 122578 MiB of free device memory
+llama-main  | llama_params_fit_impl: will leave 102875 >= 1024 MiB of free device memory, no changes needed
+llama-main  | llama_params_fit: successfully fit params to free device memory
+llama-main  | llama_params_fit: fitting params to free memory took 0.26 seconds
+llama-main  | llama_model_load_from_file_impl: using device ROCm0 (Radeon 8060S Graphics) (0000:c1:00.0) - 122578 MiB free
+llama-main  | llama_model_loader: loaded meta data with 40 key-value pairs and 808 tensors from /home/ai-svc/models/gemma-3-27b-it/gemma-3-27b-it-Q4_K_M.gguf (version GGUF V3 (latest))
+llama-main  | llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama-main  | llama_model_loader: - kv   0:                       general.architecture str              = gemma3
+llama-main  | llama_model_loader: - kv   1:                               general.type str              = model
+llama-main  | llama_model_loader: - kv   2:                               general.name str              = Gemma-3-27B-It
+llama-main  | llama_model_loader: - kv   3:                           general.finetune str              = it
+llama-main  | llama_model_loader: - kv   4:                           general.basename str              = Gemma-3-27B-It
+llama-main  | llama_model_loader: - kv   5:                       general.quantized_by str              = Unsloth
+llama-main  | llama_model_loader: - kv   6:                         general.size_label str              = 27B
+llama-main  | llama_model_loader: - kv   7:                           general.repo_url str              = https://huggingface.co/unsloth
+llama-main  | llama_model_loader: - kv   8:                      gemma3.context_length u32              = 131072
+llama-main  | llama_model_loader: - kv   9:                    gemma3.embedding_length u32              = 5376
+llama-main  | llama_model_loader: - kv  10:                         gemma3.block_count u32              = 62
+llama-main  | llama_model_loader: - kv  11:                 gemma3.feed_forward_length u32              = 21504
+llama-main  | llama_model_loader: - kv  12:                gemma3.attention.head_count u32              = 32
+llama-main  | llama_model_loader: - kv  13:    gemma3.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama-main  | llama_model_loader: - kv  14:                gemma3.attention.key_length u32              = 128
+llama-main  | llama_model_loader: - kv  15:              gemma3.attention.value_length u32              = 128
+llama-main  | llama_model_loader: - kv  16:                      gemma3.rope.freq_base f32              = 1000000.000000
+llama-main  | llama_model_loader: - kv  17:            gemma3.attention.sliding_window u32              = 1024
+llama-main  | llama_model_loader: - kv  18:             gemma3.attention.head_count_kv u32              = 16
+llama-main  | llama_model_loader: - kv  19:                   gemma3.rope.scaling.type str              = linear
+llama-main  | llama_model_loader: - kv  20:                 gemma3.rope.scaling.factor f32              = 8.000000
+llama-main  | llama_model_loader: - kv  21:                       tokenizer.ggml.model str              = llama
+llama-main  | llama_model_loader: - kv  22:                         tokenizer.ggml.pre str              = default
+llama-main  | llama_model_loader: - kv  23:                      tokenizer.ggml.tokens arr[str,262208]  = ["<pad>", "<eos>", "<bos>", "<unk>", ...
+llama-main  | llama_model_loader: - kv  24:                      tokenizer.ggml.scores arr[f32,262208]  = [-1000.000000, -1000.000000, -1000.00...
+llama-main  | llama_model_loader: - kv  25:                  tokenizer.ggml.token_type arr[i32,262208]  = [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, ...
+llama-main  | llama_model_loader: - kv  26:                tokenizer.ggml.bos_token_id u32              = 2
+llama-main  | llama_model_loader: - kv  27:                tokenizer.ggml.eos_token_id u32              = 106
+llama-main  | llama_model_loader: - kv  28:            tokenizer.ggml.unknown_token_id u32              = 3
+llama-main  | llama_model_loader: - kv  29:            tokenizer.ggml.padding_token_id u32              = 0
+llama-main  | llama_model_loader: - kv  30:               tokenizer.ggml.add_bos_token bool             = true
+llama-main  | llama_model_loader: - kv  31:               tokenizer.ggml.add_eos_token bool             = false
+llama-main  | llama_model_loader: - kv  32:                    tokenizer.chat_template str              = {{ bos_token }}\n{%- if messages[0]['r...
+llama-main  | llama_model_loader: - kv  33:            tokenizer.ggml.add_space_prefix bool             = false
+llama-main  | llama_model_loader: - kv  34:               general.quantization_version u32              = 2
+llama-main  | llama_model_loader: - kv  35:                          general.file_type u32              = 15
+llama-main  | llama_model_loader: - kv  36:                      quantize.imatrix.file str              = gemma-3-27b-it-GGUF/imatrix_unsloth.dat
+llama-main  | llama_model_loader: - kv  37:                   quantize.imatrix.dataset str              = unsloth_calibration_gemma-3-27b-it.txt
+llama-main  | llama_model_loader: - kv  38:             quantize.imatrix.entries_count i32              = 434
+llama-main  | llama_model_loader: - kv  39:              quantize.imatrix.chunks_count i32              = 663
+llama-main  | llama_model_loader: - type  f32:  373 tensors
+llama-main  | llama_model_loader: - type q4_K:  374 tensors
+llama-main  | llama_model_loader: - type q6_K:   61 tensors
+llama-main  | print_info: file format = GGUF V3 (latest)
+llama-main  | print_info: file type   = Q4_K - Medium
+llama-main  | print_info: file size   = 15.40 GiB (4.90 BPW) 
+llama-main  | load: 6242 unused tokens
+llama-main  | load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+llama-main  | load: printing all EOG tokens:
+llama-main  | load:   - 106 ('<end_of_turn>')
+llama-main  | load:   - 212 ('</s>')
+llama-main  | load: special tokens cache size = 6415
+llama-main  | load: token to piece cache size = 1.9446 MB
+llama-main  | print_info: arch                  = gemma3
+llama-main  | print_info: vocab_only            = 0
+llama-main  | print_info: no_alloc              = 0
+llama-main  | print_info: n_ctx_train           = 131072
+llama-main  | print_info: n_embd                = 5376
+llama-main  | print_info: n_embd_inp            = 5376
+llama-main  | print_info: n_layer               = 62
+llama-main  | print_info: n_head                = 32
+llama-main  | print_info: n_head_kv             = 16
+llama-main  | print_info: n_rot                 = 128
+llama-main  | print_info: n_swa                 = 1024
+llama-main  | print_info: is_swa_any            = 1
+llama-main  | print_info: n_embd_head_k         = 128
+llama-main  | print_info: n_embd_head_v         = 128
+llama-main  | print_info: n_gqa                 = 2
+llama-main  | print_info: n_embd_k_gqa          = 2048
+llama-main  | print_info: n_embd_v_gqa          = 2048
+llama-main  | print_info: f_norm_eps            = 0.0e+00
+llama-main  | print_info: f_norm_rms_eps        = 1.0e-06
+llama-main  | print_info: f_clamp_kqv           = 0.0e+00
+llama-main  | print_info: f_max_alibi_bias      = 0.0e+00
+llama-main  | print_info: f_logit_scale         = 0.0e+00
+llama-main  | print_info: f_attn_scale          = 7.7e-02
+llama-main  | print_info: n_ff                  = 21504
+llama-main  | print_info: n_expert              = 0
+llama-main  | print_info: n_expert_used         = 0
+llama-main  | print_info: n_expert_groups       = 0
+llama-main  | print_info: n_group_used          = 0
+llama-main  | print_info: causal attn           = 1
+llama-main  | print_info: pooling type          = 0
+llama-main  | print_info: rope type             = 2
+llama-main  | print_info: rope scaling          = linear
+llama-main  | print_info: freq_base_train       = 1000000.0
+llama-main  | print_info: freq_scale_train      = 0.125
+llama-main  | print_info: freq_base_swa         = 10000.0
+llama-main  | print_info: freq_scale_swa        = 1
+llama-main  | print_info: n_embd_head_k_swa     = 128
+llama-main  | print_info: n_embd_head_v_swa     = 128
+llama-main  | print_info: n_rot_swa             = 128
+llama-main  | print_info: n_ctx_orig_yarn       = 131072
+llama-main  | print_info: rope_yarn_log_mul     = 0.0000
+llama-main  | print_info: rope_finetuned        = unknown
+llama-main  | print_info: model type            = 27B
+llama-main  | print_info: model params          = 27.01 B
+llama-main  | print_info: general.name          = Gemma-3-27B-It
+llama-main  | print_info: vocab type            = SPM
+llama-main  | print_info: n_vocab               = 262208
+llama-main  | print_info: n_merges              = 0
+llama-main  | print_info: BOS token             = 2 '<bos>'
+llama-main  | print_info: EOS token             = 106 '<end_of_turn>'
+llama-main  | print_info: EOT token             = 106 '<end_of_turn>'
+llama-main  | print_info: UNK token             = 3 '<unk>'
+llama-main  | print_info: PAD token             = 0 '<pad>'
+llama-main  | print_info: LF token              = 248 '<0x0A>'
+llama-main  | print_info: EOG token             = 106 '<end_of_turn>'
+llama-main  | print_info: EOG token             = 212 '</s>'
+llama-main  | print_info: max token length      = 48
+llama-main  | load_tensors: loading model tensors, this can take a while... (mmap = false, direct_io = false)
+llama-main  | load_tensors: offloading output layer to GPU
+llama-main  | load_tensors: offloading 61 repeating layers to GPU
+llama-main  | load_tensors: offloaded 63/63 layers to GPU
+llama-main  | load_tensors:          CPU model buffer size =  1102.77 MiB
+llama-main  | load_tensors:        ROCm0 model buffer size = 15773.97 MiB
+llama-main  | .........................................................................................
+llama-main  | common_init_result: added <end_of_turn> logit bias = -inf
+llama-main  | common_init_result: added </s> logit bias = -inf
+llama-main  | llama_context: constructing llama_context
+llama-main  | llama_context: n_seq_max     = 4
+llama-main  | llama_context: n_ctx         = 131072
+llama-main  | llama_context: n_ctx_seq     = 131072
+llama-main  | llama_context: n_batch       = 2048
+llama-main  | llama_context: n_ubatch      = 512
+llama-main  | llama_context: causal_attn   = 1
+llama-main  | llama_context: flash_attn    = enabled
+llama-main  | llama_context: kv_unified    = true
+llama-main  | llama_context: freq_base     = 1000000.0
+llama-main  | llama_context: freq_scale    = 0.125
+llama-main  | llama_context:  ROCm_Host  output buffer size =     4.00 MiB
+llama-main  | llama_kv_cache_iswa: creating non-SWA KV cache, size = 131072 cells
+llama-main  | llama_kv_cache:      ROCm0 KV buffer size =  2880.00 MiB
+llama-main  | llama_kv_cache: size = 2880.00 MiB (131072 cells,  10 layers,  4/1 seqs), K (q4_0): 1440.00 MiB, V (q4_0): 1440.00 MiB
+llama-main  | llama_kv_cache_iswa: creating     SWA KV cache, size = 4608 cells
+llama-main  | llama_kv_cache:      ROCm0 KV buffer size =   526.50 MiB
+llama-main  | llama_kv_cache: size =  526.50 MiB (  4608 cells,  52 layers,  4/1 seqs), K (q4_0):  263.25 MiB, V (q4_0):  263.25 MiB
+llama-main  | sched_reserve: reserving ...
+llama-main  | sched_reserve: resolving fused Gated Delta Net support:
+llama-main  | sched_reserve: fused Gated Delta Net (autoregressive) enabled
+llama-main  | sched_reserve: fused Gated Delta Net (chunked) enabled
+llama-main  | sched_reserve:      ROCm0 compute buffer size =   522.62 MiB
+llama-main  | sched_reserve:  ROCm_Host compute buffer size =   286.02 MiB
+llama-main  | sched_reserve: graph nodes  = 2489
+llama-main  | sched_reserve: graph splits = 2
+llama-main  | sched_reserve: reserve took 43.87 ms, sched copies = 1
+llama-main  | common_init_from_params: warming up the model with an empty run - please wait ... (--no-warmup to disable)
+llama-main  | srv    load_model: initializing slots, n_slots = 4
+llama-main  | no implementations specified for speculative decoding
+llama-main  | slot   load_model: id  0 | task -1 | speculative decoding context not initialized
+llama-main  | slot   load_model: id  0 | task -1 | new slot, n_ctx = 131072
+llama-main  | no implementations specified for speculative decoding
+llama-main  | slot   load_model: id  1 | task -1 | speculative decoding context not initialized
+llama-main  | slot   load_model: id  1 | task -1 | new slot, n_ctx = 131072
+llama-main  | no implementations specified for speculative decoding
+llama-main  | slot   load_model: id  2 | task -1 | speculative decoding context not initialized
+llama-main  | slot   load_model: id  2 | task -1 | new slot, n_ctx = 131072
+llama-main  | no implementations specified for speculative decoding
+llama-main  | slot   load_model: id  3 | task -1 | speculative decoding context not initialized
+llama-main  | slot   load_model: id  3 | task -1 | new slot, n_ctx = 131072
+llama-main  | srv    load_model: prompt cache is enabled, size limit: 8192 MiB
+llama-main  | srv    load_model: use `--cache-ram 0` to disable the prompt cache
+llama-main  | srv    load_model: for more info see https://github.com/ggml-org/llama.cpp/pull/16391
+llama-main  | init: chat template, example_format: '<start_of_turn>user
+llama-main  | You are a helpful assistant
+llama-main  | 
+llama-main  | Hello<end_of_turn>
+llama-main  | <start_of_turn>model
+llama-main  | Hi there<end_of_turn>
+llama-main  | <start_of_turn>user
+llama-main  | How are you?<end_of_turn>
+llama-main  | <start_of_turn>model
+llama-main  | '
+llama-main  | srv          init: init: chat template, thinking = 0
+llama-main  | main: model loaded
+llama-main  | main: server is listening on http://0.0.0.0:42421
+llama-main  | main: starting the main loop...
+llama-main  | srv  update_slots: all slots are idle
+llama-main  | srv  params_from_: Chat format: peg-native
+llama-main  | slot get_availabl: id  3 | task -1 | selected slot by LRU, t_last = -1
+llama-main  | slot launch_slot_: id  3 | task -1 | sampler chain: logits -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> temp-ext -> dist 
+llama-main  | slot launch_slot_: id  3 | task 0 | processing task, is_child = 0
+llama-main  | slot update_slots: id  3 | task 0 | new prompt, n_ctx_slot = 131072, n_keep = 0, task.n_tokens = 7522
+llama-main  | slot update_slots: id  3 | task 0 | n_tokens = 0, memory_seq_rm [0, end)
+llama-main  | srv  log_server_r: done request: POST /v1/chat/completions 192.168.50.92 200
+llama-main  | slot update_slots: id  3 | task 0 | prompt processing progress, n_tokens = 2048, batch.n_tokens = 2048, progress = 0.272268
+llama-main  | slot update_slots: id  3 | task 0 | n_tokens = 2048, memory_seq_rm [2048, end)
+llama-main  | slot update_slots: id  3 | task 0 | prompt processing progress, n_tokens = 4096, batch.n_tokens = 2048, progress = 0.544536
+llama-main  | slot update_slots: id  3 | task 0 | n_tokens = 4096, memory_seq_rm [4096, end)
+llama-main  | slot update_slots: id  3 | task 0 | prompt processing progress, n_tokens = 6144, batch.n_tokens = 2048, progress = 0.816804
+llama-main  | slot update_slots: id  3 | task 0 | n_tokens = 6144, memory_seq_rm [6144, end)
+llama-main  | slot update_slots: id  3 | task 0 | prompt processing progress, n_tokens = 7006, batch.n_tokens = 862, progress = 0.931401
+llama-main  | slot update_slots: id  3 | task 0 | n_tokens = 7006, memory_seq_rm [7006, end)
+llama-main  | slot update_slots: id  3 | task 0 | prompt processing progress, n_tokens = 7518, batch.n_tokens = 512, progress = 0.999468
+llama-main  | slot update_slots: id  3 | task 0 | created context checkpoint 1 of 32 (pos_min = 2398, pos_max = 7005, n_tokens = 7006, size = 526.554 MiB)
+llama-main  | slot update_slots: id  3 | task 0 | n_tokens = 7518, memory_seq_rm [7518, end)
+llama-main  | slot init_sampler: id  3 | task 0 | init sampler, took 0.59 ms, tokens: text = 7522, total = 7522
+llama-main  | slot update_slots: id  3 | task 0 | prompt processing done, n_tokens = 7522, batch.n_tokens = 4
+llama-main  | slot update_slots: id  3 | task 0 | created context checkpoint 2 of 32 (pos_min = 2910, pos_max = 7517, n_tokens = 7518, size = 526.554 MiB)
+llama-main  | slot print_timing: id  3 | task 0 | 
+llama-main  | prompt eval time =   53333.11 ms /  7522 tokens (    7.09 ms per token,   141.04 tokens per second)
+llama-main  |        eval time =   53612.63 ms /   603 tokens (   88.91 ms per token,    11.25 tokens per second)
+llama-main  |       total time =  106945.74 ms /  8125 tokens
+llama-main  | slot      release: id  3 | task 0 | stop processing: n_tokens = 8124, truncated = 0
+llama-main  | srv  update_slots: all slots are idle

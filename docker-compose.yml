@@ -45,34 +45,14 @@ services:
       - "192.168.50.4:42422:42422"
     networks:
       - ai-frontend
-      - lemonade-internal
-
-  # --- THE AGENTIC BRAIN ---
-  langgraph:
-    image: langchain/langgraph-api:latest
-    container_name: langgraph-api
-    restart: unless-stopped
-    user: "${SERVICE_UID}:${SERVICE_UID}"
-    environment:
-      - OPENAI_API_BASE_URL=http://lemonade-main:11434/v1
-      - RAG_OPENAI_API_BASE_URL=http://lemonade-main:11434/v1
-      - OPENAI_API_KEY=sk-local
-      - DATABASE_URI=postgres://${LANG_POSTGRES_USER}:${LANG_POSTGRES_PASSWORD}@nuq-postgres:5432/${LANG_POSTGRES_DB}
-    volumes:
-      - ${CONFIG_ROOT}/langgraph/agents:/app/agents
-    networks:
-      - ai-frontend
-      - ai-isolated 
-    depends_on:
-      - langgraph-db
-    profiles: ["NOT_IMPLEMENTED"]
+      - local-internal
 
   # --- THE INTERFACE ---
   open-webui:
-    build:
-      context: ${CONFIG_ROOT}/open-webui/
-      dockerfile: Dockerfile
-    # image: ghcr.io/open-webui/open-webui:main
+    # build:
+    #   context: ${CONFIG_ROOT}/open-webui/
+    #   dockerfile: Dockerfile
+    image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
     user: "${SERVICE_UID}:${SERVICE_UID}"
     environment:
@@ -89,24 +69,6 @@ services:
       - OPENID_PROVIDER_URL=https://accounts.google.com/.well-known/openid-configuration
       - DEFAULT_USER_ROLE=pending
       - ENABLE_SIGNUP=false
-      - OPENAI_API_BASE_URLS=http://langgraph:8000/v1
-      - OPENAI_API_KEYS=sk-langgraph
-      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
-      - ENABLE_OTEL=true
-      - ENABLE_OTEL_TRACES=true
-      - ENABLE_OTEL_METRICS=false
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:4317
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc    # Force gRPC protocol
-      - OTEL_EXPORTER_OTLP_INSECURE=true
-      - OTEL_TRACES_EXPORTER=otlp
-      - USE_OTEL_LITELLM_REQUEST_SPAN=true  # Still critical for your chat traces
-      - OTEL_SERVICE_NAME=open-webui
-      - OTEL_PYTHON_REQUESTS_EXCLUDED_URLS=".*/batch/.*|.*/scrape/.*|.*/health"
-      - OTEL_BSP_MAX_QUEUE_SIZE=10000        # Increase buffer for your 7k+ spikes
-      - OTEL_BSP_SCHEDULE_DELAY_MILLIS=1000 # Send every 1 second
-      - OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512
-      - RAG_EMBEDDING_BATCH_SIZE=4
-      - RAG_EMBEDDING_TIMEOUT=300
     volumes:
       - /home/${SERVICE_USER}/webui_data:/app/backend/data
     networks:
@@ -115,9 +77,9 @@ services:
       - ai-isolated
 
   # --- THE MUSCLE (STRIX HALO POWER) ---
-  lemonade-main:
+  llama-main:
     build:
-      context: ${CONFIG_ROOT}/lemonade/
+      context: ${CONFIG_ROOT}/llama.cpp/
       dockerfile: Dockerfile
       args:
         - UID=${SERVICE_UID}
@@ -125,62 +87,43 @@ services:
         - USERNAME=${SERVICE_USER}
         - VIDEO_GROUP=${VIDEO_GID}
         - RENDER_GROUP=${RENDER_GID}
-    image: strix-lemonade:latest
-    container_name: lemonade-main
+    image: strix-llama:latest
+    container_name: llama-main
     user: "${SERVICE_UID}:${SERVICE_UID}"
+    # user: root
     group_add:
       - ${VIDEO_GID}
       - ${RENDER_GID}
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
-      - /dev/accel/accel0:/dev/accel/accel0
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    shm_size: '96gb'
+    shm_size: '24gb'
+    ipc: host
     security_opt:
       - seccomp:unconfined
     cap_add:
       - SYS_PTRACE
-    ipc: host
     restart: unless-stopped
-    tmpfs:
-      - /tmp:size=128M,mode=1777
     volumes:
-      - /home/${SERVICE_USER}/lemonade/models:/home/${SERVICE_USER}/models
-      - /home/${SERVICE_USER}/lemonade/state:/home/${SERVICE_USER}/.cache/
-      - /home/${SERVICE_USER}/lemonade/flm_models:/home/${SERVICE_USER}/.config/flm/models
+      - /home/${SERVICE_USER}/llamacpp/cache/:/home/${SERVICE_USER}/.cache/
+      - /home/${SERVICE_USER}/llamacpp/models/:/home/${SERVICE_USER}/models/
     environment:
-      - ROC_ENABLE_PREFETCH_MSI=1
-      - HSA_ENABLE_SDMA=0
-      - ROCR_VISIBLE_DEVICES=0
-      - GGML_HIP_UMA=1
-      - GGML_HIP_ROCWMMA=ON
       - HF_TOKEN=${HUGGING_FACE_TOKEN}
-      - LEMONADE_DEBUG=1
-      - ROCM_USE_USER_QUEUE=1
-      - LEMONADE_FLM_LINUX_BETA=1
-      - LEMONADE_MAX_LOADED_MODELS=2
-    command:
-      - lemonade-server
-      - run
-      # - serve
-      - user.devstral-small-2-24b
-      - --no-tray
-      - --host 
-      - "0.0.0.0"
-      - --port
-      - "11434"
-      - --log-level
-      - "debug"
-    # network_mode: host
-    networks:
+      - GGML_HIP_UMA=1
+      - ROCBLAS_USE_HIPBLASLT=1
+      # - AMD_LOG_LEVEL=3
+      # - GGML_ROCM_DEBUG=1
+    command: >
+      llama-server
+      -m /home/${SERVICE_USER}/models/GLM-4.7-Flash/GLM-4.7-Flash-Q4_K_M.gguf
+      -c 131072 -ngl 99 -fa on --cache-type-k q4_0 --cache-type-v q4_0 
+      --mlock --host 0.0.0.0 -b 4096 -ub 512 --port 42421 --verbose-prompt
+    networks: 
       ai-isolated:
-      lemonade-internal:
+      local-internal:
         aliases:
-          - lemonade-backend
+          - llama-backend
+      
 
   comfy-strix:
     container_name: comfy-strix
@@ -201,7 +144,7 @@ services:
       # Map to your local folders to keep weights persistent
       - /home/${SERVICE_USER}/comfy/models:/opt/ComfyUI/models
       - /home/${SERVICE_USER}/comfy/output:/opt/ComfyUI/output
-      - /home/${SERVICE_USER}comfy/custom_nodes:/opt/ComfyUI/custom_nodes
+      - /home/${SERVICE_USER}/comfy/custom_nodes:/opt/ComfyUI/custom_nodes
       - /home/${SERVICE_USER}/comfy/user:/opt/ComfyUI/user
     devices:
       - /dev/kfd:/dev/kfd
@@ -215,6 +158,7 @@ services:
     restart: unless-stopped
     cap_add:
       - SYS_PTRACE
+      - IPC_LOCK
     ulimits:
       memlock:
         soft: -1
@@ -233,7 +177,7 @@ services:
     shm_size: '30gb'
     networks:
       ai-isolated:
-      lemonade-internal:
+      local-internal:
         aliases:
           - comfy-backend
 
@@ -403,7 +347,7 @@ networks:
   ai-isolated:
     driver: bridge
     internal: true
-  lemonade-internal:
+  local-internal:
     driver: bridge
     internal: true
   nat-internet:

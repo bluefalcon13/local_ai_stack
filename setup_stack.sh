@@ -17,11 +17,11 @@ echo "🔍 Running Mechanic's Audit on .env..."
 
 # Unified variable list matching Caddyfile and Compose
 REQUIRED_VARS=(
-    "CONFIG_ROOT" "SERVICE_UID" "SERVICE_USER" "VIDEO_GID" "RENDER_GID" "APEX_GID"
+    "CONFIG_ROOT" "SERVICE_UID" "SERVICE_USER" "VIDEO_GID" "RENDER_GID"
     "DOMAIN_NAME" "CLOUDFLARE_EMAIL" "CLOUDFLARE_TUNNEL_TOKEN"
-    "TLS_CLIENT_CERT_NAME" "TLS_CLIENT_KEY_NAME" "CLOUDFLARE_AUTH_ORIGIN_PULL_CERT_NAME"
-    "WEBUI_SECRET" "SEARXNG_SECRET" "PHOENIX_SECRET"
-    "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB"
+    "WEBUI_SECRET" "SEARXNG_SECRET" "POSTGRES_PASSWORD"
+    "FIRE_POSTGRES_USER" "FIRE_POSTGRES_PASSWORD"
+    "LANG_POSTGRES_USER" "LANG_POSTGRES_PASSWORD"
 )
 
 ERRORS=()
@@ -43,7 +43,7 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
 fi
 
 # --- 2. Hardware GID Sanity Check ---
-for gid in "$RENDER_GID" "$VIDEO_GID" "$APEX_GID"; do
+for gid in "$RENDER_GID" "$VIDEO_GID" ; do
     if ! getent group "$gid" >/dev/null; then
         echo "❌ Hardware Error: GID '$gid' does not exist on this host."
         exit 1
@@ -89,10 +89,15 @@ DATA_DIRS=(
     "caddy/data" 
     "caddy/config" 
     "webui_data" 
-    "langgraph_db" 
-    "searxng_cache" 
-    "phoenix_data" 
-    "models"
+    "llamacpp/cache" 
+    "comfy/models"
+    "comfy/output"
+    "comfy/custom_nodes"
+    "comfy/user"
+    "searxng/config"
+    "searxng/logs"
+    "local_ai_db"
+    "phoenix"
 )
 
 # TODO: setup ln -s to mirror .env from projectdir to firecrawl
@@ -107,7 +112,8 @@ sudo chmod -R 700 "/home/$SERVICE_USER"
 
 # --- 4. Config Portal Validation & Mounting ---
 echo "📂 Validating Config Portal structure..."
-CONFIG_DIRS=("caddy" "caddy/cloudflare_certs" "langgraph" "searxng" "lemonade")
+CONFIG_DIRS=( "caddy" "caddy/cloudflare_certs" "data_base_config" "langgraph" "open-webui" \
+"searxng" "comfyui" "firecrawl" "llama.cpp" "rocm_runtime" )
 for cdir in "${CONFIG_DIRS[@]}"; do
     if [ ! -d "$PROJECT_ROOT/configs/$cdir" ]; then
         echo "❌ Error: Config directory '$cdir' missing in repo." >&2
