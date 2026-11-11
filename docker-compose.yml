@@ -22,35 +22,54 @@ services:
             - VLLM_SLEEP_WHEN_IDLE=1
             - FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
         command: >
-            vllm serve google/gemma-4-26B-A4B-it-qat-q4_0-unquantized
-            --tensor-parallel-size 1
-            --gpu-memory-utilization 0.95
-            --max-model-len 262144
-            --kv-cache-dtype fp8_e5m2
-            --block-size 16
-            --max-num-seqs 16
-            --enable-auto-tool-choice
-            --tool-call-parser gemma4
-            --reasoning-parser gemma4
-            --trust-remote-code
-            --trust-request-chat-template
+            vllm serve google/gemma-4-26B-A4B-it-qat-q4_0-unquantized --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --max-model-len 262144 --kv-cache-dtype fp8_e5m2 --block-size 16 --max-num-seqs 16 --enable-auto-tool-choice --tool-call-parser gemma4 --reasoning-parser gemma4 --trust-remote-code --trust-request-chat-template
     onnx-worker:
-        build: .
+        build:
+            context: ./onnx_docker
+            dockerfile: Dockerfile.onnx
         container_name: arch-onnx-worker
         devices:
-        - /dev/kfd
-        - /dev/dri
+            - /dev/kfd
+            - /dev/dri
         group_add:
-        - video
-        - render
+            - video
+            - render
         ipc: host
         cap_add:
-        - SYS_PTRACE
+            - SYS_PTRACE
         security_opt:
-        - seccomp:unconfined
-        environment:
-        - HIP_FORCE_DEV_KERNARG=1
+            - seccomp:unconfined
+        ports:
+            - "8001:8000"
         volumes:
-        - ./models:/workspace/models
-        - ./scripts:/workspace/scripts
-        command: python3 -c "import onnxruntime_genai as og; print('Containerized ONNX GenAI initialized successfully!')"
+            - /opt/rocm:/opt/rocm:ro
+            - ~/.cache/huggingface:/root/.cache/huggingface
+        environment:
+            - ROCM_PATH=/opt/rocm
+            - PATH=/opt/rocm/bin:$PATH
+            - HIP_FORCE_DEV_KERNARG=1
+    # Minimalist GoOrchestrator container (~13MB, FROM scratch, no ca-certs needed)
+    orchestrator:
+        build:
+            context: ..
+            dockerfile: builder/Dockerfile
+        image: go-orchestrator:latest
+        container_name: go-orchestrator
+        networks:
+            - internal-mesh
+        ports:
+            # Expose locally for debugging; omit if routing purely via cloudflared
+            - "8080:8080"
+        command:
+            - "-port"
+            - "8080"
+            - "-mode"
+            - "http"
+            - "-lrm-url"
+            - "http://code-assistant:8000" # Plain HTTP over internal network
+            - "-worker-url"
+            - "http://onnx-worker:8001" # Plain HTTP over internal network
+        restart: unless-stopped
+        depends_on:
+            - code-assistant
+            - onnx-worker

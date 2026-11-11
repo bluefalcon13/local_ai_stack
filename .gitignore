@@ -16,3 +16,6 @@ configs/vllm/vllm_tuning/*
 .DS_Store
 Thumbs.db
 .venv
+
+# 4 compiled go binary: onnx_goworker
+onnx_docker/onnx-goworker
