@@ -1,0 +1,15 @@
+FROM archlinux:base-devel
+
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm onnxruntime-cpu && \
+    pacman -Scc --noconfirm
+
+# add volume mounted ROCM folder to LDLIBRARYPATH the right way
+RUN echo "/opt/rocm/lib\n/opt/rocm/core/lib" > /etc/ld.so.conf.d/rocm.conf && ldconfig
+
+WORKDIR /workspace
+
+COPY ./onnx-goworker /workspace/onnx_goworker
+RUN chmod +x /workspace/onnx_goworker
+
+CMD ["./onnx_goworker"]
