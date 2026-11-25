@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "strix-orchestrator": {
+      "url": "http://192.168.50.4:8080/mcp/sse",
+      "type": "sse",
+      "disabled": false,
+      "autoApprove": [
+        "strix_orchestrator_draft_plan",
+        "strix_orchestrator_approve_plan",
+        "strix_orchestrator_get_execution_status",
+        "strix_orchestrator_update_task",
+        "strix_orchestrator_rag_search",
+        "strix_orchestrator_ingest_file",
+        "strix_orchestrator_list_workers"
+      ]
+    }
+  }
+}

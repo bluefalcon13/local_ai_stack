@@ -1,7 +1,7 @@
 services:
     code-assistant:
         container_name: code-assistant
-        image: rocm/vllm:rocm10.1.0_ubuntu24.04_py3.14-pytorch_2.13.0_vllm-0.29.0
+        image: rocm/vllm:rocm10.2.0_ubuntu24.04_py3.14-pytorch_2.14.0_vllm-0.32.0
         restart: unless-stopped
         ipc: host
         security_opt:
@@ -10,66 +10,164 @@ services:
             - /dev/kfd:/dev/kfd
             - /dev/dri:/dev/dri
         group_add:
-            - video
+            - "${HOST_VIDEO_GID:-983}"
+            - "${HOST_RENDER_GID:-987}"
         ports:
-            - "8000:8000"
+            - "${LRM_PORT:-8000}:8000"
         volumes:
             - ~/.cache/huggingface:/root/.cache/huggingface
+            - ~/models:/models:ro
+            - ${CONFIG_ROOT:-./configs}/vllm:/configs/vllm:ro
         environment:
-            - PYTORCH_TUNABLEOP_ENABLED=1
+            - HF_TOKEN=${HF_TOKEN:-}
+            - VLLM_ROCM_USE_AITER=0
+            - PYTORCH_TUNABLEOP_ENABLED=0
+            - VLLM_TUNED_CONFIG_FOLDER=/configs/vllm/vllm_tuning
             - GPU_MAX_HW_QUEUES=1
             - HIP_FORCE_DEV_KERNARG=1
-            - VLLM_SLEEP_WHEN_IDLE=1
             - FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+            - HSA_ENABLE_SDMA=0
+            - TORCH_BLAS_PREFER_HIPBLASLT=1
+            - OMP_NUM_THREADS=1
         command: >
-            vllm serve google/gemma-4-26B-A4B-it-qat-q4_0-unquantized --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --max-model-len 262144 --kv-cache-dtype fp8_e5m2 --block-size 16 --max-num-seqs 16 --enable-auto-tool-choice --tool-call-parser gemma4 --reasoning-parser gemma4 --trust-remote-code --trust-request-chat-template
+            vllm serve ${LRM_MODEL:-/models/gemma-4-26B-A4B-it-qat-w4a16-ct}
+            --served-model-name default google/gemma-4-26B-A4B-it-qat-q4_0-unquantized
+            --attention-backend TRITON_ATTN
+            --tensor-parallel-size 1
+            --gpu-memory-utilization 0.55
+            --max-model-len 131072
+            --kv-cache-dtype fp8
+            --enable-chunked-prefill
+            --max-num-batched-tokens 8192
+            --enable-prefix-caching
+            --block-size 32
+            --max-num-seqs 8
+            --enable-auto-tool-choice
+            --tool-call-parser gemma4
+            --reasoning-parser gemma4
+            --chat-template /app/vllm/examples/tool_chat_template_gemma4.jinja
+            --trust-remote-code
+            --trust-request-chat-template
+            --default-chat-template-kwargs '{"enable_thinking":true}'
+            --speculative-config '{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
     onnx-worker:
         build:
             context: ./onnx_docker
             dockerfile: Dockerfile.onnx
-        container_name: arch-onnx-worker
+        container_name: npu-onnx-worker
+        restart: unless-stopped
         devices:
-            - /dev/kfd
-            - /dev/dri
+            - /dev/accel/accel0:/dev/accel/accel0
+            - /dev/dri/renderD128:/dev/dri/renderD128
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
         group_add:
-            - video
-            - render
+            - "${HOST_VIDEO_GID:-983}"
+            - "${HOST_RENDER_GID:-987}"
         ipc: host
         cap_add:
             - SYS_PTRACE
         security_opt:
             - seccomp:unconfined
         ports:
-            - "8001:8000"
+            - "${WORKER_PORT:-8001}:8000"
         volumes:
-            - /opt/rocm:/opt/rocm:ro
-            - ~/.cache/huggingface:/root/.cache/huggingface
+            - ~/models/qwen-1.5b-npu:/root/models/qwen-1.5b-npu
         environment:
-            - ROCM_PATH=/opt/rocm
-            - PATH=/opt/rocm/bin:$PATH
-            - HIP_FORCE_DEV_KERNARG=1
+            - ONNX_PROVIDER=${ONNX_PROVIDER:-RyzenAI}
+            - WORKER_MODEL=${WORKER_MODEL:-amd/Qwen2.5-Coder-1.5B-Instruct_rai_1.9.0_npu}
+            - MODEL_PATH=${MODEL_PATH:-/root/models/qwen-1.5b-npu}
+            - MODEL_FILE=${MODEL_FILE:-}
+            - HF_TOKEN=${HF_TOKEN:-}
     # Minimalist GoOrchestrator container (~13MB, FROM scratch, no ca-certs needed)
     orchestrator:
         build:
-            context: ..
+            context: ./orchestrator
             dockerfile: builder/Dockerfile
         image: go-orchestrator:latest
         container_name: go-orchestrator
-        networks:
-            - internal-mesh
         ports:
-            # Expose locally for debugging; omit if routing purely via cloudflared
-            - "8080:8080"
+            - "${ORCHESTRATOR_PORT:-8080}:8080"
+        volumes:
+            - ./data:/data
         command:
             - "-port"
             - "8080"
-            - "-mode"
-            - "http"
             - "-lrm-url"
             - "http://code-assistant:8000" # Plain HTTP over internal network
             - "-worker-url"
-            - "http://onnx-worker:8001" # Plain HTTP over internal network
+            - "http://onnx-worker:8000" # Port 8000 over internal network
+            - "-embed-url"
+            - "http://llama-embed:8080"
+            - "-rerank-url"
+            - "http://llama-rerank:8080"
+            - "-qdrant-url"
+            - "http://qdrant:6333"
         restart: unless-stopped
         depends_on:
             - code-assistant
             - onnx-worker
+            - qdrant
+            - llama-embed
+            - llama-rerank
+
+    # --- High-Performance Vector Database ---
+    qdrant:
+        image: qdrant/qdrant:latest
+        container_name: local-qdrant
+        restart: unless-stopped
+        ports:
+            - "${QDRANT_PORT:-6333}:6333"
+            - "6334:6334"
+        volumes:
+            - ./data/qdrant_storage:/qdrant/storage:z
+            - ./data/qdrant_snapshots:/qdrant/snapshots:z
+        environment:
+            - QDRANT__SERVICE__ENABLE_STATIC_CONTENT=true
+
+    # --- Native Zen 5 / AVX-512 CPU Embeddings Engine ---
+    llama-embed:
+        build:
+            context: ./rag_docker
+            dockerfile: Dockerfile.llama-cpu
+        image: local-llama-cpu:latest
+        container_name: local-llama-embed
+        restart: unless-stopped
+        ports:
+            - "${EMBED_PORT:-8002}:8080"
+        volumes:
+            - ~/models/gguf:/models:ro
+        command: >
+            -m /models/nomic-embed-text-v1.5.Q8_0.gguf
+            --embedding
+            --host 0.0.0.0
+            --port 8080
+            -c 8192
+            -b 8192
+            -ub 8192
+            -t 16
+
+    # --- Native Zen 5 / AVX-512 CPU Cross-Encoder Reranker Engine ---
+    llama-rerank:
+        build:
+            context: ./rag_docker
+            dockerfile: Dockerfile.llama-cpu
+        image: local-llama-cpu:latest
+        container_name: local-llama-rerank
+        restart: unless-stopped
+        ports:
+            - "${RERANK_PORT:-8003}:8080"
+        volumes:
+            - ~/models/gguf:/models:ro
+        command: >
+            -m /models/bge-reranker-large-Q8_0.gguf
+            --reranking
+            --host 0.0.0.0
+            --port 8080
+            -c 2048
+            -b 2048
+            -ub 2048
+            -t 16
+

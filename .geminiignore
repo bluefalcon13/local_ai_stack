@@ -1,0 +1,6 @@
+# Block AI agent from seeing active secrets
+.env
+.env.*
+*.key
+*.pem
+*credentials.json

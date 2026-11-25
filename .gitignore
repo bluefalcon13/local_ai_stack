@@ -1,21 +1,49 @@
-# 1. Secret Environment Variables
+# --- Environment & Secret Files ---
 .env
+.env.*
+!.env.example
+*.token
+*.secret
 
-# 2. SSL/Identity Vault
-# We ignore the contents so your private keys stay off the web
-configs/caddy/cloudflare_certs/*
-!configs/caddy/cloudflare_certs/.gitkeep
+# --- Certificates, Keystores & PKI ---
+*.pem
+*.key
+*.crt
+*.cer
+*.cert
+*.csr
+*.p12
+*.pfx
+*.der
 
-# 3. vllm tuning file for model
-# We ignore the contents so we dont upload files we shouldnt to
-# git.
+# --- Cloudflare Zero Trust & Caddy Credentials ---
+cert.pem
+*credentials.json
+configs/caddy/cloudflare_certs/
+configs/**/certs/
+
+# --- Model Caches & Weights ---
+.cache/
+models/
+snapshots/
+downloads/
+data/
 configs/vllm/vllm_tuning/*
-!configs/vllm/vllm_tuning/.gitkeep
 
-# 4. OS/Editor Junk
-.DS_Store
-Thumbs.db
-.venv
+# --- Build & Binary Drops ---
+bin/
+onnx-goworker
+*.deb
+*.whl
+*.tar.gz
 
-# 4 compiled go binary: onnx_goworker
-onnx_docker/onnx-goworker
+# --- Python Environments & Caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/*
+!.venv/.gitkeep
+!.venv/README.md
+venv/
+ENV/
+

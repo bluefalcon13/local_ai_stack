@@ -5,7 +5,7 @@ all: build
 
 build:
 	@echo "==> Compiling CGO-enabled Go binary for Linux AMD64..."
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -mod=vendor -o ../$(APP_NAME) main.go
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o ../$(APP_NAME) .
 	@echo "==> Built successfully: $(APP_NAME)"
 
 clean:

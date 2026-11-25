@@ -1,0 +1,177 @@
+digraph StrixArchitecture {
+    graph [
+        bgcolor="#181825"
+        pad="0.5"
+        nodesep="0.6"
+        ranksep="0.8"
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize="16"
+        fontcolor="#cdd6f4"
+        splines="polyline"
+        concentrate=false
+    ];
+
+    node [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize="12"
+        fontcolor="#cdd6f4"
+        shape="box"
+        style="filled,rounded"
+        penwidth="2"
+        margin="0.3,0.2"
+    ];
+
+    edge [
+        fontname="Helvetica,Arial,sans-serif"
+        fontsize="11"
+        fontcolor="#a6adc8"
+        penwidth="2"
+        arrowsize="1.0"
+    ];
+
+    // ---------------------------------------------------------
+    // WINDOWS CLIENT
+    // ---------------------------------------------------------
+    subgraph cluster_windows {
+        label = "🖥️  WINDOWS DESKTOP (Client Host)"
+        fontcolor = "#89b4fa"
+        fontsize = 15
+        style = "filled,rounded"
+        color = "#89b4fa"
+        fillcolor = "#11111b"
+        penwidth = 2.5
+
+        vscode [
+            label = "VS Code Continue Extension\n(Node.js / Electron Host)\n⚠️ Strict Buffer Caps on IPC"
+            fillcolor = "#1e1e2e"
+            color = "#89b4fa"
+        ];
+
+        gemma [
+            label = "You: Gemma 26B in Continue\n(Conversational Liaison)\n❌ DO NOT SEND 100MB LOGS HERE"
+            fillcolor = "#313244"
+            color = "#f38ba8"
+            fontcolor = "#f38ba8"
+        ];
+
+        vscode -> gemma [label="In-Context Prompt", color="#89b4fa", style="dashed"];
+    }
+
+    // ---------------------------------------------------------
+    // STRIX HALO LINUX SERVER
+    // ---------------------------------------------------------
+    subgraph cluster_strix {
+        label = "🚀  STRIX HALO SERVER (Linux @ 192.168.50.4 | 128GB LPDDR5x UMA)"
+        fontcolor = "#cba6f7"
+        fontsize = 16
+        style = "filled,rounded"
+        color = "#cba6f7"
+        fillcolor = "#181825"
+        penwidth = 2.5
+
+        // Go Orchestrator
+        subgraph cluster_orch {
+            label = "⚙️  Go Orchestrator (Google ADK)"
+            fontcolor = "#fab387"
+            fontsize = 13
+            style = "filled,rounded"
+            color = "#fab387"
+            fillcolor = "#1e1e2e"
+            penwidth = 1.5
+
+            mcp_server [
+                label = "MCP SSE Server (:8080)\n/mcp/sse & /mcp/messages\nHandles Tool Calls"
+                fillcolor = "#313244"
+                color = "#fab387"
+            ];
+
+            floater [
+                label = "The Floater (LRM Engine)\n• Reviewer Hat (Quality Gate)\n• PM Hat (Splitting & Remediation)"
+                fillcolor = "#313244"
+                color = "#fab387"
+            ];
+
+            kahn_dag [
+                label = "Kahn DAG Scheduler\nTopological Task Execution Engine"
+                fillcolor = "#313244"
+                color = "#fab387"
+            ];
+
+            mcp_server -> floater [label="Plan Approval", color="#fab387"];
+            floater -> kahn_dag [label="Approved DAG", color="#fab387"];
+        }
+
+        // RAG Pipeline Cluster
+        subgraph cluster_rag {
+            label = "🧠  Zen 5 AVX-512 RAG Cluster"
+            fontcolor = "#a6e3a1"
+            fontsize = 13
+            style = "filled,rounded"
+            color = "#a6e3a1"
+            fillcolor = "#1e1e2e"
+            penwidth = 1.5
+
+            qdrant [
+                label = "Qdrant Vector DB (:6333)\n✅ 13,342 Chunks ALREADY LOADED\n• forensics_corpus\n• default_corpus"
+                fillcolor = "#313244"
+                color = "#a6e3a1"
+                fontcolor = "#a6e3a1"
+                shape = "cylinder"
+            ];
+
+            llama_embed [
+                label = "llama-embed (:8002)\nnomic-embed-text (AVX-512)\n7,000+ chunks/sec"
+                fillcolor = "#313244"
+                color = "#a6e3a1"
+            ];
+
+            llama_rerank [
+                label = "llama-rerank (:8003)\nbge-reranker-large\nCross-Encoder Precision"
+                fillcolor = "#313244"
+                color = "#a6e3a1"
+            ];
+
+            qdrant -> llama_embed [label="Vector Embeddings", color="#a6e3a1", dir="both"];
+            qdrant -> llama_rerank [label="Candidate Scoring", color="#a6e3a1", dir="both"];
+        }
+
+        // Leaf Execution Fleet
+        subgraph cluster_fleet {
+            label = "⚡  Leaf Execution Fleet"
+            fontcolor = "#f9e2af"
+            fontsize = 13
+            style = "filled,rounded"
+            color = "#f9e2af"
+            fillcolor = "#1e1e2e"
+            penwidth = 1.5
+
+            xdna_npu [
+                label = "AMD XDNA 2 NPU (:8001)\nQwen 2.5 7B (ONNX GenAI)\n• Pinned OS Thread\n• Serial Batch=1 | ≤8192 tokens"
+                fillcolor = "#313244"
+                color = "#f9e2af"
+            ];
+
+            vllm_gpu [
+                label = "vLLM Assistant (:8000)\nGemma 4 26B (W4A16)\nROCm 40 CU Unified Memory"
+                fillcolor = "#313244"
+                color = "#f9e2af"
+            ];
+        }
+
+        kahn_dag -> qdrant [label="RAG Search / Ingest", color="#a6e3a1", penwidth=2];
+        kahn_dag -> xdna_npu [label="Leaf Tasks (≤8k)", color="#f9e2af", penwidth=2];
+        kahn_dag -> vllm_gpu [label="Heavy Coding Tasks", color="#f9e2af", penwidth=2];
+    }
+
+    // ---------------------------------------------------------
+    // CROSS-MACHINE MCP BRIDGE
+    // ---------------------------------------------------------
+    vscode -> mcp_server [
+        label = "  MCP JSON-RPC over SSE  \n(Control Messages Only, NO 100MB Logs!)"
+        color = "#89dceb"
+        penwidth = 3.5
+        dir = "both"
+        fontcolor = "#89dceb"
+    ];
+}
+

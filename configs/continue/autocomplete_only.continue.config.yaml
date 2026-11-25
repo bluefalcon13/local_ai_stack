@@ -1,0 +1,50 @@
+# ==============================================================================
+# Continue Configuration: Autocomplete ONLY (FIM on Ryzen AI XDNA 2 NPU)
+# Place in: %USERPROFILE%\.continue\config.yaml on Windows
+#
+# Cline handles Agent Chat, MCP Orchestrator, and File Operations.
+# Continue handles sub-30ms Inline Tab Autocomplete via NPU :8001.
+# ==============================================================================
+name: Strix Halo NPU Autocomplete
+version: 2.0.0
+schema: v1
+
+# Minimal chat model placeholder (Chat/Edit is offloaded to Cline)
+models:
+  - name: Standby (Use Cline for Chat/Edit)
+    provider: openai
+    model: default
+    apiBase: http://192.168.50.4:8080/v1
+    apiKey: local
+    roles: []
+
+# ------------------------------------------------------------------------------
+# Dedicated Low-Latency FIM Autocomplete: Qwen2.5-Coder 1.5B on XDNA 2 NPU (:8001)
+# ------------------------------------------------------------------------------
+tabAutocompleteModel:
+  title: Qwen2.5-Coder 1.5B (Ryzen AI NPU)
+  provider: openai
+  model: qwen2.5-coder-1.5b-npu
+  apiBase: http://192.168.50.4:8001/v1
+  apiKey: local
+  contextLength: 4096
+  completionOptions:
+    maxTokens: 128
+    temperature: 0.1
+    topP: 0.95
+  autocompleteOptions:
+    maxPromptTokens: 2048
+    maxSuffixPercentage: 0.25
+    debounceDelay: 150
+    multilineCompletions: always
+
+# Embeddings & Reranker references (Optional, if using Continue @-mentions)
+embeddingsProvider:
+  provider: openai
+  model: nomic-embed-text-v1.5
+  apiBase: http://192.168.50.4:8002/v1
+
+reranker:
+  name: bge-reranker-large
+  params:
+    model: bge-reranker-large

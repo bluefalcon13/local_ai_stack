@@ -1,15 +1,87 @@
-FROM archlinux:base-devel
+# Stage 1: Build Go worker binary
+FROM golang:1.26 AS builder
 
-RUN pacman -Syu --noconfirm && \
-    pacman -S --noconfirm onnxruntime-cpu && \
-    pacman -Scc --noconfirm
+WORKDIR /src
+COPY onnx_goworker/ .
+RUN CGO_ENABLED=1 GOOS=linux go build -o /bin/onnx_goworker .
 
-# add volume mounted ROCM folder to LDLIBRARYPATH the right way
-RUN echo "/opt/rocm/lib\n/opt/rocm/core/lib" > /etc/ld.so.conf.d/rocm.conf && ldconfig
+# Stage 2: Runtime image
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install essential dependencies for XRT and ONNX Runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    tar \
+    unzip \
+    gnupg \
+    debconf-utils \
+    libnuma1 \
+    libgomp1 \
+    ocl-icd-libopencl1 \
+    libdrm2 \
+    libuuid1 \
+    libboost-filesystem1.83.0 \
+    libboost-program-options1.83.0 \
+    libncurses6 \
+    libtinfo6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install any AMD Ryzen AI / XRT deb packages, runtime tarballs, or wheels in packages/
+COPY packages/ /tmp/packages/
+RUN if [ -n "$(find /tmp/packages/ -maxdepth 1 -name '*.deb' 2>/dev/null)" ]; then \
+        echo "ryzen-ai-runtime ryzen-ai-runtime/accepted-amd-eula boolean true" | debconf-set-selections && \
+        apt-get update && \
+        apt-get install -y --fix-broken /tmp/packages/*.deb && \
+        echo "/opt/xilinx/xrt/lib" > /etc/ld.so.conf.d/xrt.conf && \
+        echo "/opt/amd/ryzenai/1.9.0/onnxruntime/lib" > /etc/ld.so.conf.d/ryzenai.conf && \
+        # Eliminate ~2.5GB duplicate by replacing deployment/lib with a symlink to onnxruntime/lib
+        if [ -d /opt/amd/ryzenai/1.9.0/deployment/lib ]; then \
+            rm -rf /opt/amd/ryzenai/1.9.0/deployment/lib && \
+            ln -s /opt/amd/ryzenai/1.9.0/onnxruntime/lib /opt/amd/ryzenai/1.9.0/deployment/lib; \
+        fi && \
+        # Link AMD's native ONNX Runtime 1.30.0 and provider libraries to system paths
+        cp -P -d /opt/amd/ryzenai/1.9.0/onnxruntime/lib/* /usr/lib/ 2>/dev/null || true && \
+        find /opt/amd -type f -name "vaip_config.json" -exec ln -sf {} /etc/vaip_config.json \; 2>/dev/null || true; \
+    fi && \
+    for archive in /tmp/packages/*.tar.gz /tmp/packages/*.tgz; do \
+    [ -f "$archive" ] || continue; \
+    echo "==> Unpacking Ryzen AI archive: $archive"; \
+    mkdir -p /tmp/extracted && \
+    tar -xzf "$archive" -C /tmp/extracted && \
+    find /tmp/extracted -type f \( -name "libonnxruntime*.so*" -o -name "libvaip*.so*" -o -name "libxir*.so*" -o -name "libvitis*.so*" \) -exec cp -av {} /usr/lib/ \; ; \
+    find /tmp/extracted -type f -name "vaip_config.json" -exec cp -av {} /etc/vaip_config.json \; 2>/dev/null || true; \
+    if [ -d /tmp/extracted/voe ]; then cp -r /tmp/extracted/voe /opt/xilinx/; fi; \
+    rm -rf /tmp/extracted; \
+    done && \
+    for wheel in /tmp/packages/*.whl; do \
+    [ -f "$wheel" ] || continue; \
+    echo "==> Extracting Python wheel: $wheel"; \
+    mkdir -p /tmp/extracted && \
+    unzip -q "$wheel" -d /tmp/extracted && \
+    find /tmp/extracted -type f \( -name "libonnxruntime*.so*" -o -name "libvaip*.so*" \) -exec cp -av {} /usr/lib/ \; ; \
+    find /tmp/extracted -type f -name "vaip_config.json" -exec cp -av {} /etc/vaip_config.json \; 2>/dev/null || true; \
+    rm -rf /tmp/extracted; \
+    done && \
+    ldconfig && \
+    rm -rf /tmp/packages
+
+ENV XILINX_XRT=/opt/xilinx/xrt
+ENV PATH=/opt/xilinx/xrt/bin:/opt/amd/ryzenai/1.9.0/bin:$PATH
+ENV LD_LIBRARY_PATH=/opt/amd/ryzenai/1.9.0/onnxruntime/lib:/opt/amd/ryzenai/1.9.0/deployment/lib:/opt/xilinx/xrt/lib:$LD_LIBRARY_PATH
+ENV VAIP_CONFIG_PATH=/etc/vaip_config.json
 
 WORKDIR /workspace
 
-COPY ./onnx-goworker /workspace/onnx_goworker
-RUN chmod +x /workspace/onnx_goworker
+# Copy compiled worker from builder stage
+COPY --from=builder /bin/onnx_goworker /workspace/onnx_goworker
+RUN chmod +x /workspace/onnx_goworker && \
+    ln -sf /opt/amd/ryzenai/1.9.0/onnxruntime/lib/* /workspace/ 2>/dev/null || true
+
+# Default internal worker port
+EXPOSE 8000
 
 CMD ["./onnx_goworker"]
+

@@ -1,0 +1,49 @@
+FROM ubuntu:24.04 AS builder
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    cmake \
+    ccache \
+    ca-certificates \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp.git .
+
+# Build with native Zen 5 optimizations (AVX-512, VNNI, BF16)
+RUN cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DGGML_NATIVE=ON \
+    -DGGML_AVX512=ON \
+    -DGGML_AVX512_VNNI=ON \
+    -DGGML_AVX512_BF16=ON \
+    -DGGML_BUILD_TESTS=OFF \
+    -DGGML_BUILD_EXAMPLES=OFF \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_BUILD_EXAMPLES=OFF \
+    -DLLAMA_BUILD_SERVER=ON \
+    && cmake --build build --config Release -j$(nproc) --target llama-server
+
+# Stage all binaries and shared libraries (.so)
+RUN mkdir -p /install_root/usr/local/bin /install_root/usr/local/lib && \
+    cp /src/build/bin/llama-server /install_root/usr/local/bin/ && \
+    find /src/build -name "*.so*" -exec cp -d {} /install_root/usr/local/lib/ \;
+
+# Runtime image - lean & fast
+FROM ubuntu:24.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libgomp1 \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install_root/usr/local /usr/local
+
+RUN ldconfig
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/llama-server"]
